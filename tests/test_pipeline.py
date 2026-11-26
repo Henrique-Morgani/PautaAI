@@ -285,3 +285,24 @@ def test_gemini_retries_on_503(monkeypatch):
 def test_quota_zero_is_not_retried():
     assert not llm._is_overloaded(RuntimeError("429 RESOURCE_EXHAUSTED ... limit: 0, model: gemini-3.1-pro"))
     assert llm._is_overloaded(RuntimeError("503 UNAVAILABLE high demand"))
+
+
+def test_cannibalization_detected_and_removed_from_links():
+    import json
+    from providers import sitemap
+    urls = ["https://www.decathlon.com.br/blog/corrida/tenis-de-corrida-como-escolher-por-pisada-distancia-e-terreno",
+            "https://www.decathlon.com.br/blog/corrida/como-comecar-a-correr-guia-iniciantes",
+            "https://www.decathlon.com.br/calcados/calcados/tenis"]
+    found = sitemap.find_existing_content(urls, "tênis de corrida")
+    assert [f["url"] for f in found] == [urls[0]]
+    raw = {"internal_candidates": [{"url": u, "type": "blog"} for u in urls], "existing_content": found}
+    a = json.loads((fakes.FIX / "analysis.json").read_text())
+    a["links_internos"] = [{"url": urls[0], "ancora": "x", "onde": "y"}, {"url": urls[1], "ancora": "z", "onde": "w"}]
+    out = bp.postprocess(a, CLIENT, raw, "tênis de corrida")
+    assert out["alerta_canibalizacao"]["url_existente"] == urls[0]
+    assert [l["url"] for l in out["links_internos"]] == [urls[1]]
+
+
+def test_title_shortened_without_ai():
+    t = bp._shorten_title("Como escolher o tênis de corrida ideal para você | Blog Decathlon")
+    assert len(t) <= 60 and t.endswith("| Blog Decathlon"), t

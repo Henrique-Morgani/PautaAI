@@ -51,6 +51,29 @@ def test_full_flow():
     assert any("Texto (markdown" in t.label for t in at.text_area)
     at.session_state["page"] = "historico"; at.run()
     assert not at.exception, at.exception
+
+    # lote: colar duas pautas e iniciar
+    from pipeline import batch as bt
+    bt.COLLECT_KW.update(kw_provider=fakes.FakeAhrefs(), serp_fn=fakes.fake_serp,
+                         crawl_fn=fakes.fake_crawl, sitemap_fn=fakes.fake_sitemap)
+    at.session_state["page"] = "lote"; at.run()
+    assert not at.exception, at.exception
+    ta = [t for t in at.text_area if t.label == "Pautas"][0]
+    ta.input("rack para sala pequena\nmesa de centro ; Como escolher mesa de centro").run()
+    assert not at.exception, at.exception
+    [b for b in at.button if b.label == "Iniciar lote"][0].click().run()
+    assert not at.exception, at.exception
+    import time
+    from core import db as _db
+    for _ in range(100):
+        if _db.pending_count() == 0:
+            break
+        time.sleep(0.1)
+    assert _db.pending_count() == 0
+    at.run()
+    assert not at.exception, at.exception
+    assert any("2/2 concluídos" in e.label for e in at.expander), [e.label for e in at.expander]
+    bt.COLLECT_KW.clear()
     at.session_state["page"] = "usuarios"; at.run()
     assert not at.exception, at.exception
     llm.OVERRIDE = None

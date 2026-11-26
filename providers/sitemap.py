@@ -92,3 +92,22 @@ def rank_candidates(urls: list[str], terms: list[str], top: int = 40) -> list[di
             products += 1
         out.append(item)
     return out[:top]
+
+
+def find_existing_content(urls: list[str], focus: str, extra_terms: list[str] | None = None, top: int = 5) -> list[dict]:
+    """Posts do blog do cliente que já tratam do tema (risco de canibalização).
+    Critério: o slug contém todos os termos principais da keyword foco (ou de uma das secundárias)."""
+    targets = [t for t in [focus] + (extra_terms or []) if t]
+    found = []
+    for u in urls:
+        if url_type(u) != "blog":
+            continue
+        slug = _tokens(urlparse(u).path)
+        best = 0.0
+        for t in targets:
+            tk = _tokens(t)
+            if tk:
+                best = max(best, len(tk & slug) / len(tk))
+        if best >= 1.0:
+            found.append({"url": u, "match": round(best, 2)})
+    return found[:top]

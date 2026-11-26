@@ -75,6 +75,25 @@ class Content(Base):
     created_at = Column(DateTime(timezone=True), default=_now)
 
 
+class Job(Base):
+    """Item de um lote. kind: analise | texto | analise_texto."""
+    __tablename__ = "pa_jobs"
+    id = Column(Integer, primary_key=True)
+    batch_id = Column(String(40), index=True, nullable=False)
+    batch_name = Column(String(255), default="")
+    client_id = Column(Integer, ForeignKey("pa_clients.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("pa_users.id"))
+    kind = Column(String(20), nullable=False)
+    status = Column(String(20), default="pendente", index=True)   # pendente | rodando | concluido | erro
+    payload = Column(JSON)                                          # keyword, topic, secundarias, notas, opções
+    briefing_id = Column(Integer, ForeignKey("pa_briefings.id"))
+    content_id = Column(Integer, ForeignKey("pa_contents.id"))
+    step = Column(String(120), default="")
+    error = Column(Text, default="")
+    created_at = Column(DateTime(timezone=True), default=_now)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 _engine = None
 _Session = None
 
@@ -163,3 +182,78 @@ def list_contents(briefing_id: int):
     with session() as s:
         return list(s.scalars(select(Content).where(Content.briefing_id == briefing_id)
                               .order_by(Content.created_at.desc())))
+
+
+# ---------- lotes
+
+def create_jobs(rows: list[dict]) -> None:
+    with session() as s:
+        for r in rows:
+            s.add(Job(**r))
+        s.commit()
+
+
+def update_job(job_id: int, **fields):
+    with session() as s:
+        j = s.get(Job, job_id)
+        for k, v in fields.items():
+            setattr(j, k, v)
+        s.commit()
+
+
+def claim_next_job():
+    """Pega o próximo item pendente (o mais antigo) e marca como rodando."""
+    with session() as s:
+        j = s.scalars(select(Job).where(Job.status == "pendente").order_by(Job.id).limit(1)).first()
+        if not j:
+            return None
+        j.status, j.step = "rodando", "iniciando"
+        s.commit()
+        return j
+
+
+def reset_running_jobs():
+    """Depois de um reboot do app, itens que estavam rodando voltam para a fila."""
+    with session() as s:
+        for j in s.scalars(select(Job).where(Job.status == "rodando")):
+            j.status, j.step = "pendente", "retomado após reinício"
+        s.commit()
+
+
+def pending_count() -> int:
+    with session() as s:
+        return len(list(s.scalars(select(Job.id).where(Job.status.in_(["pendente", "rodando"])))))
+
+
+def list_batches(limit: int = 30) -> list[dict]:
+    with session() as s:
+        jobs = list(s.scalars(select(Job).order_by(Job.id.desc()).limit(2000)))
+    batches: dict[str, dict] = {}
+    for j in jobs:
+        b = batches.setdefault(j.batch_id, {"batch_id": j.batch_id, "name": j.batch_name, "client_id": j.client_id,
+                                            "created_at": j.created_at, "jobs": []})
+        b["jobs"].append(j)
+        b["created_at"] = min(b["created_at"], j.created_at)
+    out = sorted(batches.values(), key=lambda b: b["created_at"], reverse=True)[:limit]
+    for b in out:
+        b["jobs"].sort(key=lambda j: j.id)
+    return out
+
+
+def cancel_batch(batch_id: str):
+    with session() as s:
+        for j in s.scalars(select(Job).where(Job.batch_id == batch_id, Job.status == "pendente")):
+            j.status, j.error = "erro", "cancelado pelo usuário"
+        s.commit()
+
+
+def retry_failed(batch_id: str):
+    with session() as s:
+        for j in s.scalars(select(Job).where(Job.batch_id == batch_id, Job.status == "erro")):
+            j.status, j.error, j.step = "pendente", "", "nova tentativa"
+        s.commit()
+
+
+def get_content(content_id: int):
+    with session() as s:
+        return s.get(Content, content_id)

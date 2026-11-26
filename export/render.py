@@ -137,6 +137,11 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
         else:
             p.append(headings_tree([h for h in c.get("headings", []) if not h.get("boilerplate")]))
 
+    ac = a.get("alerta_canibalizacao") or {}
+    if ac.get("url_existente"):
+        p.append("<h3>Alerta de canibalização</h3>")
+        p.append(f"<p><b>Conteúdo do cliente que já cobre o tema:</b> <a href='{e(ac['url_existente'])}'>{e(ac['url_existente'])}</a></p>")
+        p.append(f"<p>{e(ac.get('recomendacao'))}</p>")
     al = a.get("alerta_serp") or {}
     if al.get("alerta"):
         p.append("<h3>Alerta de intenção da SERP</h3>")

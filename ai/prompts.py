@@ -31,6 +31,15 @@ Intenção e SERP:
   da keyword com volume, ou usar o conteúdo como texto de apoio da categoria).
 - Se uma variação da keyword foco tiver volume muito maior, aponte isso no alerta.
 
+Canibalização:
+- Se houver itens em conteudos_do_cliente_sobre_o_mesmo_tema (ou posts nos links candidatos cujo assunto seja
+  o mesmo da pauta), preencha alerta_canibalizacao: diga qual URL já cobre o tema e recomende o caminho
+  (atualizar e ampliar o post existente, ou diferenciar a pauta com outro ângulo e outra keyword).
+- Nunca use como link interno um post do cliente que trate do MESMO tema da pauta.
+
+Termos semânticos: 10 a 20 termos específicos tirados das candidatas com volume e dos headings dos concorrentes
+(ex.: "pisada pronada", "drop", "entressola"). Não use palavras soltas genéricas como "tênis" ou "corrida".
+
 Oportunidades de otimização:
 - Cada item deve ser uma instrução executável e específica, com o termo, o local e o exemplo
   (ex.: "Usar 'X' no H1 e nos primeiros 100 caracteres da introdução", "Responder a PAA 'Y' em um bloco de 40 a 60
@@ -80,6 +89,8 @@ ANALYSIS_SCHEMA = {
         "alerta": "vazio se não houver risco; senão, explique o risco e o caminho recomendado",
         "keyword_alternativa": "variação informacional sugerida com volume, ou vazio",
     },
+    "alerta_canibalizacao": {"url_existente": "URL do cliente que já cobre o tema, ou vazio",
+                             "recomendacao": "o que fazer: atualizar o post existente ou diferenciar a pauta"},
     "leitura_estrategica": "2 a 4 parágrafos: padrão da SERP, pontos fortes, pontos fracos e a oportunidade do cliente",
     "posicionamento": "uma frase entre aspas com o posicionamento recomendado para o conteúdo",
     "concorrentes": [{"concorrente": "nome do site", "caracteristica": "característica principal", "limitacao": "limitação percebida"}],
@@ -181,6 +192,7 @@ def analysis_prompt(client: dict, focus: str, topic: str, raw: dict, notes: str 
         "visao_de_ia": raw.get("ai_overview") or serp.get("ai_overview") or "(não exibida ou não capturada)",
         "concorrentes_lidos": _competitor_digest(raw.get("competitors", [])),
         "links_internos_candidatos": raw.get("internal_candidates", []),
+        "conteudos_do_cliente_sobre_o_mesmo_tema": raw.get("existing_content", []),
         "links_prioritarios_do_cliente": [l for l in (client.get("priority_links") or "").splitlines() if l.strip()],
         "observacoes_do_analista": notes,
     }

@@ -14,6 +14,7 @@ import streamlit as st
 from ai import llm
 from core import auth, config, db
 from export import gdocs, render
+from pipeline import batch
 from pipeline import briefing as bp
 from pipeline import content as cp
 from pipeline import validate
@@ -403,18 +404,127 @@ def page_history():
     st.title("Análises")
     clients = {c.id: c.name for c in db.list_clients()}
     flt = st.selectbox("Cliente", [None] + list(clients), format_func=lambda x: "Todos" if x is None else clients[x])
-    rows = db.list_briefings(flt)
+    rows = db.list_briefings(flt, limit=300)
     if not rows:
         st.info("Nenhuma análise ainda.")
         return
     labels = {"rascunho": "🟡 Rascunho", "revisado": "🔵 Revisado", "texto_gerado": "🟢 Texto gerado"}
-    for b in rows:
-        c1, c2, c3, c4 = st.columns([3, 2, 1.4, 1])
-        c1.markdown(f"**{b.focus_keyword}**  \n<span class='pa-muted'>{b.topic or ''}</span>", unsafe_allow_html=True)
-        c2.write(clients.get(b.client_id, "-"))
-        c3.write(f"{labels.get(b.status, b.status)}  \n{b.created_at:%d/%m/%Y}")
-        if c4.button("Abrir", key=f"open_{b.id}"):
-            go("briefing", briefing_id=b.id)
+    df = pd.DataFrame([{"Palavra-chave": b.focus_keyword, "Pauta": b.topic or "", "Cliente": clients.get(b.client_id, "-"),
+                        "Status": labels.get(b.status, b.status), "Criada em": f"{b.created_at:%d/%m/%Y %H:%M}"}
+                       for b in rows])
+    st.caption("Clique na linha para selecionar. Com uma selecionada, você pode abrir; com várias, gerar os textos em lote.")
+    ev = st.dataframe(df, hide_index=True, width="stretch", on_select="rerun", selection_mode="multi-row",
+                      key="hist_table", height=min(600, 38 + 35 * len(df)))
+    sel = [rows[i] for i in (ev.selection.rows if ev and ev.selection else [])]
+    if not sel:
+        return
+    if len(sel) == 1:
+        if st.button(f"Abrir \"{sel[0].focus_keyword}\"", type="primary"):
+            go("briefing", briefing_id=sel[0].id)
+    st.divider()
+    st.markdown(f"**Gerar textos em lote** ({len(sel)} análise(s) selecionada(s))")
+    no_struct = [b.focus_keyword for b in sel if not (b.analysis or {}).get("estrutura")]
+    drafts = [b.focus_keyword for b in sel if b.status == "rascunho"]
+    if no_struct:
+        st.error("Sem estrutura de headings (não dá para gerar texto): " + ", ".join(no_struct))
+    if drafts:
+        st.warning("Ainda não revisadas: " + ", ".join(drafts) + ". O texto vai seguir a análise como a IA gerou.")
+    c1, c2 = st.columns([1, 2])
+    size = c1.selectbox("Tamanho alvo", ["800 a 1200", "1200 a 1800", "1800 a 2500", "2500 a 3500"], index=1, key="lt_size")
+    extra = c2.text_input("Instruções adicionais para todos os textos (opcional)", key="lt_extra")
+    ok_ids = [b.id for b in sel if (b.analysis or {}).get("estrutura")]
+    if st.button(f"Gerar {len(ok_ids)} texto(s)", type="primary", disabled=not ok_ids):
+        batch.create_text_batch(ok_ids, auth.current_user()["id"], size, extra)
+        go("lote")
+
+
+def page_batch():
+    st.title("Lote")
+    tab_new, tab_status = st.tabs(["Novo lote de análises", "Acompanhar lotes"])
+    with tab_new:
+        clients = db.list_clients()
+        if not clients:
+            st.warning("Cadastre um cliente antes.")
+            return
+        client = st.selectbox("Cliente", clients, format_func=lambda c: c.name, key="lote_client")
+        mode = st.radio("Como informar as pautas", ["Colar lista", "Subir planilha (.xlsx ou .csv)"], horizontal=True)
+        items = []
+        if mode == "Colar lista":
+            st.caption("Uma pauta por linha. Só a palavra-chave é obrigatória. Formato completo: "
+                       "`palavra-chave ; pauta ; secundária 1, secundária 2 ; observações`")
+            txt = st.text_area("Pautas", height=220, placeholder="tênis de corrida\nmochila de trilha ; Como escolher a "
+                               "mochila de trilha ideal ; mochila cargueira, mochila 40 litros")
+            items = batch.parse_lines(txt)
+        else:
+            st.caption("Colunas aceitas: palavra-chave (obrigatória), pauta, secundárias (separadas por vírgula), observações.")
+            up = st.file_uploader("Planilha", type=["xlsx", "csv"])
+            if up is not None:
+                try:
+                    df = pd.read_csv(up, sep=None, engine="python") if up.name.lower().endswith(".csv") else pd.read_excel(up)
+                    items = batch.parse_table(df)
+                except Exception as ex:
+                    st.error(f"Não consegui ler a planilha: {ex}")
+        if items:
+            st.dataframe(pd.DataFrame([{"Palavra-chave": i["keyword"], "Pauta": i["topic"],
+                                        "Secundárias": ", ".join(i["secondary"]), "Observações": i["notes"]}
+                                       for i in items]), hide_index=True, width="stretch")
+        with_text = st.toggle("Gerar também o texto de cada pauta, sem revisão da análise", value=False,
+                              help="Recomendado deixar desligado: revise as análises e depois gere os textos em lote na tela Análises.")
+        c1, c2 = st.columns([1, 2])
+        size = c1.selectbox("Tamanho do texto", ["800 a 1200", "1200 a 1800", "1800 a 2500", "2500 a 3500"],
+                            index=1, disabled=not with_text)
+        extra = c2.text_input("Instruções adicionais para os textos (opcional)", disabled=not with_text)
+        if items:
+            n = len(items)
+            st.info(f"**{n} pauta(s).** Consumo estimado: Serper {n} a {2 * n} créditos · Ahrefs cerca de {5 * n} chamadas · "
+                    f"Gemini {2 * n if not with_text else 3 * n}+ chamadas. Tempo: cerca de {max(2, round(n * (2.5 if with_text else 1.5)))} min. "
+                    "Pode fechar a aba: o lote continua rodando.")
+        if st.button("Iniciar lote", type="primary", disabled=not items):
+            batch.create_analysis_batch(client.id, auth.current_user()["id"], items, with_text, size, extra)
+            st.session_state["lote_tab_status"] = True
+            st.success("Lote iniciado. Acompanhe na aba \"Acompanhar lotes\".")
+    with tab_status:
+        batch_status()
+
+
+@st.fragment(run_every=6)
+def batch_status():
+    batch.ensure_worker()
+    batches = db.list_batches()
+    if not batches:
+        st.info("Nenhum lote ainda.")
+        return
+    clients = {c.id: c.name for c in db.list_clients()}
+    icons = {"pendente": "⏳", "rodando": "⚙️", "concluido": "✅", "erro": "❌"}
+    kinds = {"analise": "Análise", "texto": "Texto", "analise_texto": "Análise + texto"}
+    for b in batches:
+        jobs = b["jobs"]
+        done = sum(1 for j in jobs if j.status in ("concluido", "erro"))
+        ok = sum(1 for j in jobs if j.status == "concluido")
+        err = sum(1 for j in jobs if j.status == "erro")
+        running = any(j.status in ("pendente", "rodando") for j in jobs)
+        title = f"{b['name']} · {clients.get(b['client_id'], '-')} · {ok}/{len(jobs)} concluídos" + (f" · {err} com erro" if err else "")
+        with st.expander(title, expanded=running):
+            st.progress(done / len(jobs) if jobs else 1.0)
+            for j in jobs:
+                c1, c2, c3 = st.columns([3, 3, 1.2])
+                c1.markdown(f"{icons.get(j.status, '')} **{(j.payload or {}).get('keyword', '')}**  \n"
+                            f"<span class='pa-muted'>{kinds.get(j.kind, j.kind)}</span>", unsafe_allow_html=True)
+                info = j.error if j.status == "erro" else j.step
+                c2.markdown(f"<span class='pa-muted'>{info or ''}</span>", unsafe_allow_html=True)
+                if j.briefing_id and c3.button("Abrir", key=f"jb_{j.id}"):
+                    go("briefing", briefing_id=j.briefing_id)
+            a1, a2, a3 = st.columns(3)
+            if ok:
+                a1.download_button("Baixar todos (.zip)", batch.batch_zip(b), file_name=f"lote-{b['batch_id']}.zip",
+                                   mime="application/zip", key=f"zip_{b['batch_id']}")
+            if err and not running and a2.button("Tentar de novo os com erro", key=f"rt_{b['batch_id']}"):
+                db.retry_failed(b["batch_id"])
+                batch.ensure_worker()
+                st.rerun()
+            if running and a3.button("Cancelar pendentes", key=f"cx_{b['batch_id']}"):
+                db.cancel_batch(b["batch_id"])
+                st.rerun()
 
 
 def page_clients():
@@ -497,7 +607,9 @@ def main():
         auth.login_screen()
         return
     me = auth.current_user()
-    pages = {"nova": "➕ Nova análise", "historico": "🗂️ Análises", "clientes": "🏢 Clientes", "usuarios": "👤 Usuários"}
+    pages = {"nova": "➕ Nova análise", "lote": "📚 Lote", "historico": "🗂️ Análises", "clientes": "🏢 Clientes",
+             "usuarios": "👤 Usuários"}
+    batch.ensure_worker()
     page = st.session_state.get("page", "nova")
     with st.sidebar:
         st.markdown(f"## {config.APP_NAME}")
@@ -507,11 +619,14 @@ def main():
                          type="primary" if page == k or (page == "briefing" and k == "historico") else "secondary"):
                 go(k)
         st.divider()
+        pend = db.pending_count()
+        if pend:
+            st.caption(f"⚙️ {pend} item(ns) de lote em processamento")
         st.caption(f"Keywords: {config.KEYWORD_PROVIDER} · IA: {config.LLM_PROVIDER}")
         if st.button("Sair", width="stretch"):
             auth.logout()
 
-    {"nova": page_new, "historico": page_history, "clientes": page_clients,
+    {"nova": page_new, "lote": page_batch, "historico": page_history, "clientes": page_clients,
      "usuarios": page_users, "briefing": page_briefing}.get(page, page_new)()
 
 

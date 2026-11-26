@@ -61,6 +61,7 @@ def collect(client: dict, focus: str, manual_secondary: list[str] | None = None,
         urls = sitemap_fn(client.get("domain", ""), client.get("sitemap_url", ""))
         terms = [focus] + (manual_secondary or []) + [c["keyword"] for c in raw["keywords"].get("candidates", [])[:15]]
         raw["internal_candidates"] = sitemap.rank_candidates(urls, terms)
+        raw["existing_content"] = sitemap.find_existing_content(urls, focus, (manual_secondary or [])[:3])
         raw["sitemap_total"] = len(urls)
     except Exception as e:
         raw["internal_candidates"], raw["sitemap_total"] = [], 0
@@ -140,12 +141,30 @@ def _fix_title_description(analysis: dict, client: dict, focus: str) -> dict:
         t, d = fixed.get("title", "").strip(), fixed.get("description", "").strip()
         if t and len(t) <= 60:
             est["title"] = t[0].upper() + t[1:]
+        elif len(est.get("title", "")) > 60:
+            est["title"] = _shorten_title(est["title"])
         if d and 110 <= len(d) <= 160:
             est["description"] = d
     except Exception:
-        pass
+        if len(est.get("title", "")) > 60:
+            est["title"] = _shorten_title(est["title"])
     analysis["estrutura"] = est
     return analysis
+
+
+def _shorten_title(title: str, limit: int = 60) -> str:
+    """Último recurso: tira palavras de enchimento antes do sufixo da marca até caber em 60 caracteres."""
+    head, sep, suffix = title.rpartition(" | ")
+    if not sep:
+        head, suffix = title, ""
+    fillers = [r"\s+para voc[eê]\b", r"\s+ideal\b", r"\s+completo\b", r"\s+(o\s+)?seu\b", r"\s+(o\s+)?sua\b",
+               r"\s+de forma (simples|pr[aá]tica)\b", r"\s+passo a passo\b", r"\s+(o|a)\b(?=\s+t[eê]nis)"]
+    for f in fillers:
+        if len(head) + (len(suffix) + 3 if suffix else 0) <= limit:
+            break
+        head = re.sub(f, "", head, count=1, flags=re.I).strip()
+    out = f"{head} | {suffix}" if suffix else head
+    return out
 
 
 _FAQ_RE = re.compile(r"d[uú]vidas|perguntas frequentes|\bfaq\b", re.I)
@@ -159,6 +178,18 @@ def postprocess(analysis: dict, client: dict, raw: dict, focus: str) -> dict:
     if allowed:
         analysis["links_internos"] = [l for l in analysis.get("links_internos", [])
                                       if str(l.get("url", "")).rstrip("/") in allowed]
+
+    # 1b. canibalização: registra o que a coleta achou e não usa esse post como link interno
+    existing = [c["url"].rstrip("/") for c in raw.get("existing_content", [])]
+    al = analysis.get("alerta_canibalizacao") or {}
+    if existing and not al.get("url_existente"):
+        al = {"url_existente": existing[0], "recomendacao": al.get("recomendacao") or
+              "O cliente já tem um post sobre este tema. Avalie atualizar e ampliar esse post em vez de criar um novo."}
+    analysis["alerta_canibalizacao"] = al
+    if al.get("url_existente"):
+        same = al["url_existente"].rstrip("/")
+        analysis["links_internos"] = [l for l in analysis.get("links_internos", [])
+                                      if str(l.get("url", "")).rstrip("/") != same]
 
     # 2. FAQ: perguntas como H3 logo abaixo do H2 de dúvidas frequentes
     est = analysis.setdefault("estrutura", {})
