@@ -194,6 +194,10 @@ def page_briefing():
 
     for err in raw.get("errors", []):
         st.warning(err)
+    ac = (a.get("alerta_canibalizacao") or {}) if a else {}
+    if ac.get("url_existente"):
+        st.error(f"**Alerta de canibalização:** o cliente já tem conteúdo sobre este tema: {ac['url_existente']}  \n"
+                 f"{ac.get('recomendacao', '')}")
     al = (a.get("alerta_serp") or {}) if a else {}
     if al.get("alerta"):
         st.error(f"**Alerta de intenção:** {al['alerta']}"
