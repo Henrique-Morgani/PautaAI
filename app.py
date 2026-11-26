@@ -213,6 +213,9 @@ def page_briefing():
         if serp.get("organic"):
             st.dataframe(pd.DataFrame(serp["organic"])[["position", "title", "description", "url"]],
                          hide_index=True, width="stretch")
+        if serp.get("serp_features"):
+            st.markdown("**Outros recursos na SERP:** " + " · ".join(
+                f"{k} ({v.get('count')})" for k, v in serp["serp_features"].items()))
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"**PAA** ({raw.get('paa_source') or 'não exibido'})")

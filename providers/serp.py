@@ -82,7 +82,30 @@ def normalize(raw: dict, num: int = 10) -> dict:
             "domain": _domain(o.get("link", "")),
             "date": o.get("date", ""),
         })
+    known = {"searchParameters", "organic", "peopleAlsoAsk", "relatedSearches", "credits", "knowledgeGraph",
+             "answerBox", "aiOverview", "ai_overview"}
+    labels = {"videos": "Vídeos", "inlineVideos": "Vídeos", "topStories": "Principais notícias", "news": "Notícias",
+              "images": "Imagens", "inlineImages": "Imagens", "shopping": "Shopping", "places": "Locais",
+              "twitter": "X/Twitter", "discussionsAndForums": "Discussões e fóruns"}
+    features = {}
+    for k, v in raw.items():
+        if k in known or not isinstance(v, list) or not v:
+            continue
+        name = labels.get(k, k)
+        items = []
+        for it in v[:6]:
+            if isinstance(it, dict):
+                items.append({"title": it.get("title", ""), "url": it.get("link") or it.get("url", ""),
+                              "source": it.get("source") or it.get("channel") or ""})
+        features[name] = {"count": len(v), "items": items}
+    if raw.get("knowledgeGraph"):
+        features["Painel de conhecimento"] = {"count": 1, "items": [{"title": raw["knowledgeGraph"].get("title", ""),
+                                                                     "url": "", "source": ""}]}
+    if raw.get("answerBox"):
+        features["Snippet em destaque"] = {"count": 1, "items": [{"title": raw["answerBox"].get("title", ""),
+                                                                  "url": raw["answerBox"].get("link", ""), "source": ""}]}
     return {
+        "serp_features": features,
         "organic": organic,
         "paa": [p.get("question", "") for p in raw.get("peopleAlsoAsk", []) if p.get("question")],
         "related_searches": [r.get("query", "") for r in raw.get("relatedSearches", []) if r.get("query")],

@@ -63,6 +63,9 @@ Estrutura:
 - Não crie heading para "Índice" ou "Sumário": o índice é texto, não heading.
 - URL curta em slug com a keyword foco.
 - Termine com o H2 de dúvidas frequentes e as perguntas do FAQ como H3 logo abaixo dele.
+- As perguntas do FAQ não podem repetir assuntos que já têm H2 ou H3 próprio no texto: use o FAQ para
+  dúvidas complementares (PAA e perguntas do Ahrefs que não viraram seção).
+- Palavras-chave e termos semânticos em letras minúsculas, como as pessoas buscam.
 
 A seção "formatos" descreve como os CONCORRENTES estruturam suas páginas, não as regras de escrita do cliente.
 

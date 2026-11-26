@@ -76,13 +76,21 @@ def analyze(client: dict, focus: str, topic: str, raw: dict, notes: str = "",
     analysis = llm.complete_json(prompts.ANALYSIS_SYSTEM, prompt)
     analysis = _fix_title_description(analysis, client, focus)
     # garante que as secundárias obrigatórias do analista estejam presentes
-    sec = analysis.get("secondary_keywords") or []
-    for k in raw.get("manual_secondary", []):
-        if k and k.lower() not in [s.lower() for s in sec]:
-            sec.append(k)
+    sec = []
+    for k in (analysis.get("secondary_keywords") or []) + raw.get("manual_secondary", []):
+        k = (k or "").strip()
+        if k and _norm(k) not in {_norm(x) for x in sec} and _norm(k) != _norm(focus):
+            sec.append(_lower_kw(k))
     analysis["secondary_keywords"] = sec
+    analysis["semantic_terms"] = list(dict.fromkeys(_lower_kw(t) for t in analysis.get("semantic_terms", []) if t))
     fill_missing_volumes(analysis, raw, client, kw_provider)
     return postprocess(analysis, client, raw, focus)
+
+
+def _lower_kw(k: str) -> str:
+    """Palavras-chave em minúsculas, como são buscadas; preserva siglas e nomes com mais de uma maiúscula."""
+    return " ".join(w if (len(w) > 1 and w.isupper()) or sum(c.isupper() for c in w) > 1 else w.lower()
+                    for w in str(k).split())
 
 
 def _norm(s: str) -> str:

@@ -36,7 +36,8 @@ BOILERPLATE = [
     r"^sobre n[oó]s$", r"^siga (a|o|n)", r"social$", r"^central de", r"^minha conta", r"^baixe (o|nosso) app",
     r"^televendas", r"^ajuda$", r"^d[uú]vidas\?$", r"^pol[ií]tica", r"^trocas e devolu", r"^meus pedidos",
     r"^cadastre", r"^ofertas$", r"^lojas?$", r"^nossas lojas", r"^certifica", r"^selos?", r"^app$",
-    r"^eleve sua", r"^filtr", r"^ordenar", r"^resultados?$", r"^\d+ produtos?",
+    r"^eleve sua", r"^filtr", r"^ordenar", r"^resultados?( de produtos)?$", r"^\d+ produtos?", r"cupom",
+    r"primeira compra", r"^frete gr[aá]tis", r"^compre (j[aá]|agora)", r"^aproveite",
 ]
 _BOILER_RE = re.compile("|".join(BOILERPLATE), re.I)
 
@@ -91,6 +92,36 @@ def _jsonld(soup: BeautifulSoup) -> list[dict]:
     return out
 
 
+PRODUCT_RE = re.compile(r"\|\s*\w|\b(masculino|feminino|unissex|infantil)\b.*\|", re.I)
+
+
+def clean_headings(headings: list[dict], cap: int = 60) -> tuple[list[dict], int]:
+    """Remove repetições e títulos de cards de produto (vitrine), que não são estrutura de conteúdo.
+    Devolve (headings, quantidade de títulos de produto omitidos)."""
+    seen, out, omitted = set(), [], 0
+    by_level: dict[int, int] = {}
+    for h in headings:
+        if not h.get("boilerplate"):
+            by_level[h["level"]] = by_level.get(h["level"], 0) + 1
+    # nível com muitos títulos (vitrine de produtos): costuma ser h3/h4 com 20+ itens
+    grid_levels = {lvl for lvl, n in by_level.items() if n >= 20 and lvl >= 2}
+    for h in headings:
+        key = h["text"].lower()
+        if key in seen and not h.get("boilerplate"):
+            continue
+        seen.add(key)
+        if not h.get("boilerplate") and (h["level"] in grid_levels and (PRODUCT_RE.search(h["text"]) or len(h["text"]) > 60)):
+            omitted += 1
+            continue
+        out.append(h)
+    content = [h for h in out if not h.get("boilerplate")]
+    if len(content) > cap:
+        omitted += len(content) - cap
+        keep = {id(h) for h in content[:cap]}
+        out = [h for h in out if h.get("boilerplate") or id(h) in keep]
+    return out, omitted
+
+
 def parse_html(html: str, url: str = "") -> dict:
     soup = BeautifulSoup(html, "lxml")
     for t in soup(["script", "style", "noscript", "svg"]):
@@ -135,6 +166,7 @@ def parse_html(html: str, url: str = "") -> dict:
             headings.append({"level": int(h.name[1]), "text": txt,
                              "boilerplate": is_boilerplate(txt) or in_chrome(h)})
 
+    headings, product_titles = clean_headings(headings)
     main = _main_node(soup)
     text = _clean(main.get_text(" "))
     words = len(re.findall(r"\w+", text))
@@ -145,6 +177,7 @@ def parse_html(html: str, url: str = "") -> dict:
         "title": title,
         "meta_description": desc,
         "headings": headings,
+        "product_titles_omitted": product_titles,
         "word_count": words,
         "tables": len(main.find_all("table")),
         "lists": len(main.find_all(["ul", "ol"])),
@@ -184,10 +217,12 @@ def parse_markdown(md: str, url: str = "") -> dict:
         txt = _clean(re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", hm.group(2)))
         if txt:
             headings.append({"level": len(hm.group(1)), "text": txt, "boilerplate": is_boilerplate(txt)})
+    headings, product_titles = clean_headings(headings)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)|\[([^\]]*)\]\([^)]*\)", r"\1", body)
     words = len(re.findall(r"\w+", text))
     return {
         "url": url, "title": title, "meta_description": "", "headings": headings, "word_count": words,
+        "product_titles_omitted": product_titles,
         "tables": len(re.findall(r"^\|.*\|\s*\n\|[\s:|-]+\|", body, re.M)),
         "lists": len(re.findall(r"(?:^|\n\n)\s*(?:[-*]|\d+\.)\s", body)),
         "images": len(re.findall(r"!\[", body)), "videos": 0, "has_faq_schema": False, "schema_types": [],

@@ -103,6 +103,16 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
                     [[e(o["position"]), e(o["title"]), e(o["description"]), f"<a href='{e(o['url'])}'>{e(o['url'])}</a>"]
                      for o in serp.get("organic", [])]))
 
+    feats = serp.get("serp_features") or {}
+    if feats:
+        p.append("<h3>Outros recursos na SERP</h3>")
+        p.append("<p><i>Blocos que aparecem na página de resultados além dos links orgânicos.</i></p>")
+        rows = []
+        for name, f in feats.items():
+            ex = "; ".join(filter(None, [(i.get("title") or "")[:70] for i in f.get("items", [])[:3]]))
+            rows.append([e(name), e(f.get("count")), e(ex)])
+        p.append(_table(["Recurso", "Itens", "Exemplos"], rows))
+
     p.append("<h3>Heading tags</h3>")
     for c in raw.get("competitors", []):
         p.append(f"<h4>[{e(c.get('position'))}] {e(c.get('domain'))}</h4>")
@@ -116,6 +126,8 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
             facts.append("FAQ schema")
         if c.get("via"):
             facts.append("lido via leitor externo")
+        if c.get("product_titles_omitted"):
+            facts.append(f"{c['product_titles_omitted']} títulos de produto da vitrine omitidos")
         if c.get("published") or c.get("modified"):
             facts.append(f"publicado {c.get('published') or '-'} / atualizado {c.get('modified') or '-'}")
         if facts:
@@ -163,7 +175,9 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
 
     it = a.get("intencao", {})
     p.append("<h3>Intenção de busca do usuário</h3>")
-    p.append(f"<p>A intenção é predominantemente <b>{e(it.get('tipo'))}</b>.</p><p>{e(it.get('descricao'))}</p>")
+    tipo = str(it.get("tipo") or "").strip().rstrip(".")
+    tipo = tipo[:1].lower() + tipo[1:]
+    p.append(f"<p>A intenção é predominantemente <b>{e(tipo)}</b>.</p><p>{e(it.get('descricao'))}</p>")
     if it.get("o_que_busca"):
         p.append("<p>A pessoa provavelmente busca:</p>" + _ul(it.get("o_que_busca")))
     if it.get("orientacao_tom"):

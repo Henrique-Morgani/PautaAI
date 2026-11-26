@@ -231,3 +231,30 @@ def test_missing_secondary_volumes_and_index_removed():
     assert "Índice" not in [h["text"] for h in a["estrutura"]["headings"]]
     extra = {r["keyword"] for r in raw["keywords"]["extra"]}
     assert "rack para sala com nicho" in extra
+
+
+def test_product_grid_is_collapsed():
+    cards = "".join(f"<h4>Tênis FLAME {i} Placa de Carbono Corrida - Feminino | Rosa {i}</h4>" for i in range(30))
+    html = f"<html><body><h1>361 Sport</h1>{cards}{cards}<h2>Tecnologia para sua corrida</h2></body></html>"
+    page = crawler.parse_html(html, "https://361sport.com.br/")
+    texts = [h["text"] for h in page["headings"] if not h["boilerplate"]]
+    assert texts == ["361 Sport", "Tecnologia para sua corrida"]
+    assert page["product_titles_omitted"] == 30
+
+
+def test_serp_features_and_dedupe_accents():
+    import json
+    from providers import serp
+    raw = json.loads((fakes.FIX / "serper.json").read_text())
+    raw["videos"] = [{"title": "Como escolher tênis", "link": "https://youtube.com/x", "channel": "Canal"}]
+    out = serp.normalize(raw)
+    assert out["serp_features"]["Vídeos"]["count"] == 1
+    llm.OVERRIDE = lambda s, p, j: json.dumps({**json.loads((fakes.FIX / "analysis.json").read_text()),
+        "secondary_keywords": ["Tênis para corrida", "tenis para corrida", "Rack ideal para sala", "Tipos de rack"],
+        "semantic_terms": ["Corrida", "corrida", "Placa de carbono"]})
+    r = _collect()
+    r["manual_secondary"] = ["Tenis para corrida"]
+    a = bp.analyze(CLIENT, "rack ideal para sala", "", r, kw_provider=fakes.FakeAhrefs())
+    llm.OVERRIDE = None
+    assert a["secondary_keywords"] == ["tênis para corrida", "tipos de rack"]
+    assert a["semantic_terms"] == ["corrida", "placa de carbono"]
