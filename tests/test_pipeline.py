@@ -258,3 +258,30 @@ def test_serp_features_and_dedupe_accents():
     llm.OVERRIDE = None
     assert a["secondary_keywords"] == ["tênis para corrida", "tipos de rack"]
     assert a["semantic_terms"] == ["corrida", "placa de carbono"]
+
+
+def test_gemini_retries_on_503(monkeypatch):
+    from types import SimpleNamespace as NS
+    from google import genai
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            calls.append(model)
+            if len(calls) < 3:
+                raise RuntimeError("503 UNAVAILABLE. This model is currently experiencing high demand.")
+            return NS(text="ok", candidates=[NS(finish_reason=NS(name="STOP"))])
+
+    class FakeClient:
+        def __init__(self, **kw):
+            self.models = FakeModels()
+
+    monkeypatch.setattr(genai, "Client", FakeClient)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert llm._gemini("sys", "p", False, 0.4) == "ok" and len(calls) == 3
+
+
+def test_quota_zero_is_not_retried():
+    assert not llm._is_overloaded(RuntimeError("429 RESOURCE_EXHAUSTED ... limit: 0, model: gemini-3.1-pro"))
+    assert llm._is_overloaded(RuntimeError("503 UNAVAILABLE high demand"))

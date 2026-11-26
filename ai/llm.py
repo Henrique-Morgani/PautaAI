@@ -37,8 +37,16 @@ def _gemini(system: str, prompt: str, want_json: bool, temperature: float) -> st
     def call(contents):
         nonlocal model
         try:
-            return client.models.generate_content(model=model, contents=contents, config=cfg)
+            return _with_retry(lambda: client.models.generate_content(model=model, contents=contents, config=cfg))
         except Exception as ex:
+            if _is_overloaded(ex):
+                # o modelo continua sobrecarregado: tenta outro modelo Gemini da mesma chave
+                alt = _best_gemini_model(client, exclude=model, family="flash" if "flash" in model else "")
+                if alt:
+                    model = alt
+                    return _with_retry(lambda: client.models.generate_content(model=model, contents=contents, config=cfg), tries=2)
+                raise LLMError("O Gemini está sobrecarregado no momento (erro 503). A coleta foi salva: "
+                               "tente \"Gerar de novo\" em alguns minutos.") from ex
             if "404" not in str(ex) and "NOT_FOUND" not in str(ex):
                 raise
             # modelo configurado não existe para esta chave: escolhe o melhor disponível
@@ -92,7 +100,27 @@ FINISH_LABELS = {
 }
 
 
-def _best_gemini_model(client) -> str:
+def _is_overloaded(ex: Exception) -> bool:
+    t = str(ex)
+    if "limit: 0" in t:  # cota zerada no plano gratuito: tentar de novo não resolve
+        return False
+    return any(x in t for x in ("503", "UNAVAILABLE", "overloaded", "high demand", "500 INTERNAL",
+                                "DEADLINE_EXCEEDED", "429", "RESOURCE_EXHAUSTED"))
+
+
+def _with_retry(fn, tries: int = 3, waits=(4, 12, 25)):
+    """Erros temporários do Google (503 sobrecarga, 429 por minuto): espera e tenta de novo."""
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as ex:
+            if not _is_overloaded(ex) or i == tries - 1:
+                raise
+            time.sleep(waits[min(i, len(waits) - 1)])
+
+
+def _best_gemini_model(client, exclude: str = "", family: str = "") -> str:
     """Lista os modelos da chave e prefere: pro estável > pro preview > flash."""
     names = []
     for m in client.models.list():
@@ -100,6 +128,8 @@ def _best_gemini_model(client) -> str:
         if actions and "generateContent" not in actions:
             continue
         n = (m.name or "").replace("models/", "")
+        if n == exclude:
+            continue
         if n.startswith("gemini") and not any(x in n for x in ("image", "tts", "audio", "embedding", "live", "lite")):
             names.append(n)
 
@@ -107,6 +137,8 @@ def _best_gemini_model(client) -> str:
         ver = [float(x) for x in __import__("re").findall(r"gemini-(\d+(?:\.\d+)?)", n)[:1]] or [0]
         return (2 if "pro" in n else 1 if "flash" in n else 0, ver[0], 0 if "preview" in n or "exp" in n else 1)
 
+    if family and any(family in n for n in names):
+        names = [n for n in names if family in n]
     return max(names, key=score) if names else ""
 
 
