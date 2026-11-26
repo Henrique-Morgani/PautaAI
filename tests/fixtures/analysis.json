@@ -1,0 +1,57 @@
+{
+  "secondary_keywords": ["rack suspenso para sala", "rack para sala moderno", "rack para sala pequena", "rack para sala moderno planejado", "rack para sala grande", "altura rack tv", "altura ideal para rack suspenso", "ideias de rack para sala pequena", "tipos de rack", "tamanho padrão de rack para sala"],
+  "semantic_terms": ["rack com painel", "rack branco", "painel para tv", "sala de estar"],
+  "leitura_estrategica": "A SERP é dominada por conteúdos de dicas e comparativos entre rack e painel, com foco em sala de estar e pouco recorte sazonal.\nO ponto fraco é que boa parte dos resultados é de 2022 e trata a altura do rack de forma superficial, sem relacionar medida, tamanho da TV e distância do sofá.",
+  "posicionamento": "Um guia prático para escolher o rack ideal para a sala, considerando tamanho, altura, instalação e estilo, com o gancho da Copa do Mundo.",
+  "concorrentes": [
+    {"concorrente": "Kappesberg", "caracteristica": "Comparativo rack x painel bem estruturado", "limitacao": "Conteúdo de 2022, sem atualização"},
+    {"concorrente": "Estadão Imóveis", "caracteristica": "Autoridade editorial com arquitetos", "limitacao": "Pouco orientado à conversão"},
+    {"concorrente": "MadeiraMadeira", "caracteristica": "Lista de ideias para sala pequena", "limitacao": "Pouca orientação técnica de medidas"}
+  ],
+  "concorrente_destaque": "A Kappesberg é o principal benchmark em estrutura, porque separa rack e painel, traz altura ideal e tem FAQ marcado com schema.",
+  "formatos": [
+    {"nome": "Comparativo educativo", "estrutura": ["Introdução", "O que é cada opção", "Vantagens", "Conclusão"], "caracteristicas": ["Conteúdo médio", "Pouca profundidade técnica"]},
+    {"nome": "Lista de ideias", "estrutura": ["Introdução", "Lista numerada de inspirações"], "caracteristicas": ["Foco em imagens", "Pouca orientação de compra"]}
+  ],
+  "leitura_semantica": "A SERP resolve bem a dúvida rack ou painel, mas não resolve a escolha completa do rack ideal.",
+  "abordagem_predominante": ["comparar rack e painel", "dar ideias para sala pequena", "citar a altura ideal da TV"],
+  "abordagem_recomendada": "Trabalhar um guia de decisão: em vez de apenas citar a altura, explicar como somar altura do rack e da TV para chegar ao centro da tela na linha dos olhos.",
+  "recursos_visuais": [
+    {"recurso": "Tabela de medidas", "descricao": "Largura de rack recomendada por tamanho de TV"},
+    {"recurso": "Checklist de compra", "descricao": "Itens para medir antes de comprar"}
+  ],
+  "intencao": {
+    "tipo": "informacional com viés comercial",
+    "descricao": "O usuário quer escolher um rack e está próximo da decisão de compra.",
+    "o_que_busca": ["medidas ideais", "tipos de rack", "modelos para sala pequena"],
+    "orientacao_tom": "Conversão leve ao longo do texto e mais forte no fechamento."
+  },
+  "oportunidades": ["Atualizar o conteúdo para 2026", "Responder as PAA de altura e tamanho em blocos objetivos", "Incluir tabela de medidas"],
+  "link_building": {
+    "resumo": "Transformar a tabela de medidas em ativo linkável para portais de decoração.",
+    "ativos": [{"titulo": "Tabela de medidas de rack por tamanho de TV", "descricao": "Material simples e citável por jornalistas"}]
+  },
+  "estrutura": {
+    "title": "Como escolher o rack ideal para a sala da Copa do Mundo",
+    "description": "Entenda como escolher o rack para sala na Copa do Mundo considerando tamanho, altura, instalação, estilo e espaço. Confira dicas da Madesa.",
+    "url": "/como-escolher-rack-ideal-para-sala-copa-do-mundo/",
+    "headings": [
+      {"level": 1, "text": "Como escolher o rack ideal para sua sala na Copa do Mundo"},
+      {"level": 2, "text": "Por que o rack é importante na sala da Copa?"},
+      {"level": 2, "text": "Como escolher o rack ideal para a sala?"},
+      {"level": 3, "text": "Avalie o tamanho da TV e a proporção do móvel"},
+      {"level": 3, "text": "Observe a circulação e a distância até o sofá"},
+      {"level": 2, "text": "Rack suspenso ou rack no chão: qual escolher?"},
+      {"level": 2, "text": "Qual o tamanho ideal de rack para sala pequena?"},
+      {"level": 2, "text": "Como escolher rack para sala grande?"},
+      {"level": 2, "text": "Tipos de rack para sala"},
+      {"level": 2, "text": "Qual a altura ideal do rack para TV?"},
+      {"level": 2, "text": "Encontre racks para sala na Madesa"}
+    ]
+  },
+  "links_internos": [
+    {"url": "https://www.madesa.com/collections/estante-e-rack-para-tv", "ancora": "estante e rack para TV", "onde": "Tipos de rack para sala"},
+    {"url": "https://www.madesa.com/collections/rack-com-painel", "ancora": "rack com painel", "onde": "Tipos de rack para sala"}
+  ],
+  "faq": ["Qual a altura ideal de um rack para TV?", "É melhor rack suspenso ou no chão?"]
+}

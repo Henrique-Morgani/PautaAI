@@ -1,0 +1,17 @@
+{
+  "searchParameters": {"q": "rack ideal para sala", "gl": "br", "hl": "pt-br"},
+  "organic": [
+    {"position": 1, "title": "Rack ou painel: qual escolher para sua sala de estar? | Kappesberg", "link": "https://blog.kappesberg.com.br/dicas/rack-ou-painel/", "snippet": "Veja as diferenças entre rack e painel e descubra qual combina com a sua sala."},
+    {"position": 2, "title": "Rack para sala: veja dicas para acertar na escolha", "link": "https://www.instagram.com/p/DXhCO5Nlc3-/", "snippet": ""},
+    {"position": 3, "title": "Como escolher o rack ideal para a sua sala - Estadão Imóveis", "link": "https://imoveis.estadao.com.br/decoracao/rack-ideal/", "snippet": "Arquitetos explicam como escolher o rack certo para cada tamanho de sala.", "date": "12 de mai. de 2022"},
+    {"position": 4, "title": "Rack para sala pequena: 15 ideias - MadeiraMadeira", "link": "https://www.madeiramadeira.com.br/central-de-dicas/artigos/rack-sala-pequena", "snippet": "Inspire-se com ideias de rack para sala pequena e aproveite melhor o espaço."},
+    {"position": 5, "title": "Altura do rack: guia completo | Nacasa", "link": "https://blog.nacasa.com.br/altura-rack/", "snippet": "Descubra a altura ideal do rack para TV e evite desconforto."}
+  ],
+  "peopleAlsoAsk": [
+    {"question": "Qual a altura ideal de um rack para TV?", "snippet": "Entre 90 e 110 cm..."},
+    {"question": "Qual o tamanho ideal de rack para sala pequena?", "snippet": "..."},
+    {"question": "É melhor rack suspenso ou no chão?", "snippet": "..."}
+  ],
+  "relatedSearches": [{"query": "rack suspenso"}, {"query": "rack para sala pequena"}, {"query": "rack com painel"}],
+  "credits": 1
+}

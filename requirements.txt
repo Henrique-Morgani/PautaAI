@@ -1,0 +1,13 @@
+streamlit>=1.50
+pandas
+requests
+beautifulsoup4
+lxml
+markdown
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+bcrypt
+google-api-python-client
+google-auth
+google-genai
+anthropic
