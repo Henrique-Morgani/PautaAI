@@ -58,7 +58,7 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
     kw = raw.get("keywords", {})
     serp = raw.get("serp", {})
     cand = {_k(c["keyword"]): c for c in kw.get("candidates", [])}
-    for c in kw.get("focus", []) or []:  # métricas das secundárias digitadas pelo analista
+    for c in (kw.get("focus") or []) + (kw.get("extra") or []):  # secundárias do analista e da IA
         cand.setdefault(_k(c.get("keyword", "")), c)
     fm = (kw.get("focus") or [{}])[0] if kw.get("focus") else {}
     p = [f"<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>",
@@ -74,6 +74,9 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
         c = cand.get(_k(k), {})
         rows.append([e(k), _fmt_num(c.get("volume")), _fmt_num(c.get("difficulty"))])
     p.append(_table(["Palavra-chave", "Volume", "KD"], rows) if rows else _ul([]))
+    if any(r[1] in ("-", "0") for r in rows):
+        p.append("<p><i>Termos com volume 0 ou \"-\" não têm demanda medida pelo Ahrefs. "
+                 "Avalie se vale manter como secundária ou usar só como subtema.</i></p>")
     if a.get("semantic_terms"):
         p.append("<p><b>Termos para trabalhar semanticamente:</b> " + e(", ".join(a["semantic_terms"])) + "</p>")
 

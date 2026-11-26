@@ -183,3 +183,51 @@ def test_prompt_carries_client_rules():
     pr = prompts.analysis_prompt(c, "tenis de corrida", "", _collect())
     assert "| Blog Decathlon" in pr and "Mizuno" in pr and "tipo_pagina_estimado" in pr
     assert "NUNCA use links internos" in prompts.ANALYSIS_SYSTEM
+
+
+def test_block_page_is_not_content(monkeypatch):
+    from types import SimpleNamespace as NS
+    blocked_html = "<html><head><title>Access Denied</title></head><body><h1>Access Denied</h1><p>You don't have permission.</p></body></html>"
+    blocked_md = "Title: Access Denied\n\nMarkdown Content:\n# Access Denied\n\nYou don't have permission to access this server."
+
+    def fake_get(url, timeout=0, headers=None):
+        if url.startswith("https://r.jina.ai/"):
+            return NS(status_code=200, text=blocked_md + " " * 400)
+        return NS(status_code=200, text=blocked_html, apparent_encoding="utf-8", encoding="utf-8")
+
+    monkeypatch.setattr(crawler.requests, "get", fake_get)
+    page = crawler.fetch("https://www.adidas.com.br/calcados-running")
+    assert page["status"] == "erro" and "bloqueou" in page["error"]
+
+
+def test_serper_completes_with_page_2(monkeypatch):
+    import json
+    from types import SimpleNamespace as NS
+    from providers import serp
+    first = json.loads((fakes.FIX / "serper.json").read_text())  # 5 orgânicos
+    second = {"organic": [{"title": f"R{i}", "link": f"https://site{i}.com/x", "snippet": ""} for i in range(8)]}
+
+    def fake_post(url, timeout=0, headers=None, json=None):
+        return NS(status_code=200, json=lambda: second if json.get("page") == 2 else first, text="")
+
+    monkeypatch.setattr(serp.requests, "post", fake_post)
+    monkeypatch.setenv("SERPER_API_KEY", "x")
+    out = serp.search("rack")
+    assert len(out["organic"]) == 10 and [o["position"] for o in out["organic"]] == list(range(1, 11))
+
+
+def test_missing_secondary_volumes_and_index_removed():
+    import json
+    raw = _collect()
+    llm.OVERRIDE = lambda s, p, j: json.dumps({**json.loads((fakes.FIX / "analysis.json").read_text()),
+        "secondary_keywords": ["rack suspenso para sala", "rack para sala com nicho"],
+        "estrutura": {"title": "como escolher o rack ideal para a sala | Blog Madesa",
+                      "description": "x" * 140, "url": "/rack/",
+                      "headings": [{"level": 1, "text": "Como escolher o rack"}, {"level": 2, "text": "Índice"},
+                                   {"level": 2, "text": "Tipos de rack"}]}})
+    a = bp.analyze(CLIENT, "rack ideal para sala", "", raw, kw_provider=fakes.FakeAhrefs())
+    llm.OVERRIDE = None
+    assert a["estrutura"]["title"].startswith("Como")
+    assert "Índice" not in [h["text"] for h in a["estrutura"]["headings"]]
+    extra = {r["keyword"] for r in raw["keywords"]["extra"]}
+    assert "rack para sala com nicho" in extra

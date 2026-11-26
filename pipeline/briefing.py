@@ -70,16 +70,74 @@ def collect(client: dict, focus: str, manual_secondary: list[str] | None = None,
     return raw
 
 
-def analyze(client: dict, focus: str, topic: str, raw: dict, notes: str = "") -> dict:
+def analyze(client: dict, focus: str, topic: str, raw: dict, notes: str = "",
+            kw_provider: keywords.KeywordProvider | None = None) -> dict:
     prompt = prompts.analysis_prompt(client, focus, topic, raw, notes)
     analysis = llm.complete_json(prompts.ANALYSIS_SYSTEM, prompt)
+    analysis = _fix_title_description(analysis, client, focus)
     # garante que as secundárias obrigatórias do analista estejam presentes
     sec = analysis.get("secondary_keywords") or []
     for k in raw.get("manual_secondary", []):
         if k and k.lower() not in [s.lower() for s in sec]:
             sec.append(k)
     analysis["secondary_keywords"] = sec
+    fill_missing_volumes(analysis, raw, client, kw_provider)
     return postprocess(analysis, client, raw, focus)
+
+
+def _norm(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or "").lower()).encode("ascii", "ignore").decode()
+    return " ".join(s.split())
+
+
+def fill_missing_volumes(analysis: dict, raw: dict, client: dict, kw_provider=None):
+    """A IA às vezes cria secundárias que não estavam nas candidatas: busca o volume delas no Ahrefs
+    (1 chamada) para o analista ver quais têm demanda real."""
+    kw = raw.setdefault("keywords", {})
+    known = {_norm(c.get("keyword")) for c in (kw.get("candidates") or []) + (kw.get("focus") or [])
+             + (kw.get("extra") or [])}
+    missing = [k for k in analysis.get("secondary_keywords", []) if _norm(k) not in known]
+    if not missing:
+        return
+    try:
+        prov = kw_provider or keywords.get_provider()
+        rows = prov.overview(missing[:20], (client.get("country") or "br").lower())
+        found = {_norm(r.get("keyword")) for r in rows}
+        # termo sem resultado no Ahrefs = sem volume medido
+        rows += [{"keyword": k, "volume": 0, "difficulty": None, "source": "sem dados"}
+                 for k in missing if _norm(k) not in found]
+        kw["extra"] = (kw.get("extra") or []) + rows
+    except Exception as e:
+        raw.setdefault("errors", []).append(f"Volume das secundárias sugeridas pela IA: {e}")
+
+
+def _fix_title_description(analysis: dict, client: dict, focus: str) -> dict:
+    """Se o title passar de 60 ou a description sair de 120-155 caracteres, pede só esses dois de novo."""
+    est = analysis.get("estrutura") or {}
+    title, desc = est.get("title", ""), est.get("description", "")
+    if title and title[0].islower():
+        title = title[0].upper() + title[1:]
+        est["title"] = title
+    if len(title) <= 60 and 120 <= len(desc) <= 155:
+        return analysis
+    try:
+        fixed = llm.complete_json(
+            "Você é analista de SEO. Reescreva title e description respeitando os limites. "
+            "Português correto com acentos. Não use travessão. Responda só JSON.",
+            f"Keyword foco: {focus}\nRegras do cliente: {client.get('tone_of_voice') or '-'}\n"
+            f"Title atual ({len(title)} caracteres): {title}\nDescription atual ({len(desc)} caracteres): {desc}\n"
+            "Limites: title com no máximo 60 caracteres contando o sufixo da marca; description entre 120 e 155.\n"
+            'Formato: {"title": "...", "description": "..."}')
+        t, d = fixed.get("title", "").strip(), fixed.get("description", "").strip()
+        if t and len(t) <= 60:
+            est["title"] = t[0].upper() + t[1:]
+        if d and 110 <= len(d) <= 160:
+            est["description"] = d
+    except Exception:
+        pass
+    analysis["estrutura"] = est
+    return analysis
 
 
 _FAQ_RE = re.compile(r"d[uú]vidas|perguntas frequentes|\bfaq\b", re.I)
@@ -96,7 +154,8 @@ def postprocess(analysis: dict, client: dict, raw: dict, focus: str) -> dict:
 
     # 2. FAQ: perguntas como H3 logo abaixo do H2 de dúvidas frequentes
     est = analysis.setdefault("estrutura", {})
-    heads = [h for h in est.get("headings", []) if h.get("text")]
+    heads = [h for h in est.get("headings", []) if h.get("text")
+             and not re.fullmatch(r"\s*([ií]ndice|sum[aá]rio|conte[uú]do)\s*:?\s*", h["text"], re.I)]
     faq = [q for q in analysis.get("faq", []) if q]
     if faq:
         idx = next((i for i, h in enumerate(heads) if h.get("level") == 2 and _FAQ_RE.search(h["text"])), None)

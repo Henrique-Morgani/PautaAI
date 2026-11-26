@@ -56,10 +56,15 @@ Links internos (separados do link building):
 Estrutura:
 - Específica para a keyword foco, superando a SERP: cobre a intenção, responde às PAA, aproveita as secundárias.
 - H2 preferencialmente em forma de pergunta ou com termos de busca reais.
-- Title com até 60 caracteres, em letras minúsculas (só a primeira letra e nomes próprios em maiúscula),
-  seguindo o padrão de title do cliente quando houver. Description entre 120 e 155 caracteres.
+- Title com NO MÁXIMO 60 caracteres contando o sufixo da marca (ex.: "| Blog Decathlon"). Primeira letra maiúscula,
+  o resto em minúsculas, exceto nomes próprios. Description entre 120 e 155 caracteres. Conte os caracteres.
+- Title, description, headings, termos semânticos e textos sempre em português correto, COM acentos
+  ("tênis", "você", "distância"), mesmo que a palavra-chave da ferramenta venha sem acento.
+- Não crie heading para "Índice" ou "Sumário": o índice é texto, não heading.
 - URL curta em slug com a keyword foco.
 - Termine com o H2 de dúvidas frequentes e as perguntas do FAQ como H3 logo abaixo dele.
+
+A seção "formatos" descreve como os CONCORRENTES estruturam suas páginas, não as regras de escrita do cliente.
 
 Devolva somente JSON válido no formato pedido."""
 
@@ -76,7 +81,7 @@ ANALYSIS_SCHEMA = {
     "posicionamento": "uma frase entre aspas com o posicionamento recomendado para o conteúdo",
     "concorrentes": [{"concorrente": "nome do site", "caracteristica": "característica principal", "limitacao": "limitação percebida"}],
     "concorrente_destaque": "parágrafo sobre o(s) concorrente(s) mais relevante(s) em estrutura e por quê",
-    "formatos": [{"nome": "nome do formato", "estrutura": ["etapas"], "caracteristicas": ["características"]}],
+    "formatos": [{"nome": "formato de página usado pelos CONCORRENTES da SERP (ex.: página de categoria com guia de compra embutido; artigo checklist)", "estrutura": ["como esses concorrentes organizam a página"], "caracteristicas": ["características e limitações observadas nos concorrentes"]}],
     "leitura_semantica": "uma frase sobre o quanto a SERP resolve bem a intenção",
     "abordagem_predominante": ["itens da abordagem que os concorrentes usam"],
     "abordagem_recomendada": "parágrafo com a abordagem recomendada para o cliente, com um exemplo concreto",

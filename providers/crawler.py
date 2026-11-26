@@ -41,6 +41,18 @@ BOILERPLATE = [
 _BOILER_RE = re.compile("|".join(BOILERPLATE), re.I)
 
 
+BLOCK_RE = re.compile(
+    r"access denied|unable to give you access|attention required|just a moment|verify you are human|"
+    r"are you a robot|captcha|forbidden|request blocked|acesso negado|bot detection|"
+    r"enable javascript and cookies|pardon our interruption|error 1020", re.I)
+
+
+def is_block_page(page: dict) -> bool:
+    """Página de bloqueio anti-robô (Akamai, Cloudflare etc.) lida como se fosse conteúdo."""
+    first = " ".join([page.get("title", "")] + [h["text"] for h in page.get("headings", [])[:3]])
+    return bool(BLOCK_RE.search(first)) or (page.get("word_count", 0) < 150 and bool(BLOCK_RE.search(page.get("excerpt", ""))))
+
+
 def is_boilerplate(text: str) -> bool:
     return bool(_BOILER_RE.search(text.strip()))
 
@@ -219,9 +231,13 @@ def fetch(url: str, timeout: int = 20) -> dict:
     except Exception as e:
         error = str(e)[:200]
     # bloqueou o robô ou a página monta o conteúdo por JavaScript: tenta o leitor externo
+    if result and is_block_page(result):
+        result, error = None, "bloqueou a leitura automática"
     useful = result and [h for h in result["headings"] if not h["boilerplate"]]
     if not useful:
         alt = _fetch_reader(url)
+        if alt and is_block_page(alt):
+            alt, error = None, "bloqueou a leitura automática (inclusive pelo leitor externo)"
         if alt and [h for h in alt["headings"] if not h["boilerplate"]]:
             if result:  # mantém o que só o HTML tem (schema, datas)
                 for k in ("has_faq_schema", "schema_types", "published", "modified", "meta_description"):

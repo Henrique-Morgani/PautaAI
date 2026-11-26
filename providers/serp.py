@@ -17,18 +17,33 @@ class SerpError(RuntimeError):
 
 
 def search(query: str, gl: str = "br", hl: str = "pt-br", num: int = 10) -> dict:
-    """Pede 20 resultados ao Serper (o Google costuma mostrar menos de 10 orgânicos quando há
-    Shopping, vídeos e PAA) e fica com os 10 primeiros orgânicos."""
+    """Busca o top 10 orgânico. Se a primeira página trouxer menos de 10 (comum quando há Shopping,
+    vídeos e PAA), busca a página 2 para completar (1 crédito a mais só nesses casos)."""
     key = config.get("api_key", section="serper") or config.get("SERPER_API_KEY")
     if not key:
         raise SerpError("Chave do Serper não configurada ([serper] api_key).")
     r = requests.post("https://google.serper.dev/search", timeout=40,
                       headers={"X-API-KEY": key, "Content-Type": "application/json"},
-                      json={"q": query, "gl": gl, "hl": hl,
-                            "num": int(config.get("num", section="serper") or 20)})
+                      json={"q": query, "gl": gl, "hl": hl, "num": 10})
     if r.status_code != 200:
         raise SerpError(f"Serper retornou {r.status_code}: {r.text[:300]}")
-    return normalize(r.json(), num)
+    data = r.json()
+    # o Google às vezes mostra só 7 ou 8 orgânicos na primeira página: completa com a página 2
+    if len(data.get("organic", [])) < num:
+        try:
+            r2 = requests.post("https://google.serper.dev/search", timeout=40,
+                               headers={"X-API-KEY": key, "Content-Type": "application/json"},
+                               json={"q": query, "gl": gl, "hl": hl, "page": 2})
+            if r2.status_code == 200:
+                seen = {o.get("link") for o in data.get("organic", [])}
+                extra = [o for o in r2.json().get("organic", []) if o.get("link") not in seen]
+                base = len(data.get("organic", []))
+                for i, o in enumerate(extra, start=1):
+                    o["position"] = base + i
+                data["organic"] = data.get("organic", []) + extra
+        except Exception:
+            pass
+    return normalize(data, num)
 
 
 def _domain(url: str) -> str:

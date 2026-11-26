@@ -289,7 +289,7 @@ def page_briefing():
                 with st.spinner("Analisando..."):
                     try:
                         new = bp.analyze(cd, b.focus_keyword, b.topic, raw, (raw.get("notes", "") + "\n" + extra).strip())
-                        db.save_briefing({"analysis": new, "status": "rascunho"}, b.id)
+                        db.save_briefing({"analysis": new, "raw_data": raw, "status": "rascunho"}, b.id)
                         st.rerun()
                     except Exception as ex:
                         st.error(str(ex))
