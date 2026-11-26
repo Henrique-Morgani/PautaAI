@@ -24,14 +24,42 @@ def _gemini(system: str, prompt: str, want_json: bool, temperature: float) -> st
     key = config.get("api_key", section="gemini") or config.get("GEMINI_API_KEY")
     if not key:
         raise LLMError("Chave do Gemini não configurada ([gemini] api_key).")
-    model = config.get("model", section="gemini") or "gemini-2.5-pro"
-    client = genai.Client(api_key=key)
+    model = (config.get("model", section="gemini") or "gemini-pro-latest").replace("models/", "")
+    # v1beta é a versão da API que aceita modelos preview e os aliases "-latest"
+    client = genai.Client(api_key=key, http_options=types.HttpOptions(api_version="v1beta"))
     cfg = types.GenerateContentConfig(
         system_instruction=system, temperature=temperature, max_output_tokens=32000,
         response_mime_type="application/json" if want_json else "text/plain",
     )
-    resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
+    try:
+        resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
+    except Exception as ex:
+        if "404" not in str(ex) and "NOT_FOUND" not in str(ex):
+            raise
+        # modelo configurado não existe para esta chave: escolhe o melhor disponível
+        fallback = _best_gemini_model(client)
+        if not fallback:
+            raise LLMError(f"Modelo '{model}' indisponível e nenhum modelo Gemini encontrado para esta chave.") from ex
+        resp = client.models.generate_content(model=fallback, contents=prompt, config=cfg)
     return resp.text or ""
+
+
+def _best_gemini_model(client) -> str:
+    """Lista os modelos da chave e prefere: pro estável > pro preview > flash."""
+    names = []
+    for m in client.models.list():
+        actions = getattr(m, "supported_actions", None) or []
+        if actions and "generateContent" not in actions:
+            continue
+        n = (m.name or "").replace("models/", "")
+        if n.startswith("gemini") and not any(x in n for x in ("image", "tts", "audio", "embedding", "live", "lite")):
+            names.append(n)
+
+    def score(n):
+        ver = [float(x) for x in __import__("re").findall(r"gemini-(\d+(?:\.\d+)?)", n)[:1]] or [0]
+        return (2 if "pro" in n else 1 if "flash" in n else 0, ver[0], 0 if "preview" in n or "exp" in n else 1)
+
+    return max(names, key=score) if names else ""
 
 
 def _anthropic(system: str, prompt: str, want_json: bool, temperature: float) -> str:
