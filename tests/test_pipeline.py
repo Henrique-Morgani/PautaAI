@@ -87,3 +87,99 @@ def test_semrush_placeholder_raises():
         assert False
     except keywords.KeywordProviderError:
         pass
+
+
+def test_gemini_continues_when_cut(monkeypatch):
+    from types import SimpleNamespace as NS
+    from google import genai
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            calls.append(contents)
+            if len(calls) == 1:
+                return NS(text="# Título\n\nPrimeira parte do texto que foi", candidates=[NS(finish_reason=NS(name="MAX_TOKENS"))])
+            return NS(text="interrompida e agora termina.", candidates=[NS(finish_reason=NS(name="STOP"))])
+
+    class FakeClient:
+        def __init__(self, **kw):
+            self.models = FakeModels()
+
+    monkeypatch.setattr(genai, "Client", FakeClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    out = llm._gemini("sys", "escreva", False, 0.5)
+    assert out.endswith("foi interrompida e agora termina.") and len(calls) == 2
+    assert "Continue EXATAMENTE" in calls[1]
+    assert llm.LAST_FINISH["reason"] == "STOP"
+
+
+def test_content_check_detects_cut_text():
+    import json
+    a = json.loads((fakes.FIX / "analysis.json").read_text())
+    body = "# Como escolher o rack ideal para sua sala na Copa do Mundo\n\nIntro.\n\n## Por que o rack é importante na sala da Copa?\n\nO rack organiza a sala e"
+    checks = {c["item"]: c for c in validate.check_content("rack ideal para sala", a, body)}
+    assert not checks["Texto termina com frase completa"]["ok"]
+    assert not checks["Todas as seções da estrutura no texto"]["ok"]
+    full = (fakes.FIX / "body.md").read_text()
+    checks = {c["item"]: c for c in validate.check_content("rack ideal para sala", a, full)}
+    assert checks["Texto termina com frase completa"]["ok"], checks
+    assert checks["Todas as seções da estrutura no texto"]["ok"], checks
+
+
+def test_footer_headings_are_boilerplate():
+    page = crawler.parse_html((fakes.FIX / "competitor.html").read_text(), "https://x.com/a")
+    texts = [h["text"] for h in page["headings"] if not h["boilerplate"]]
+    assert "Qualquer coisa do rodapé" not in texts and "Lojas oficiais" not in texts
+    assert "Formas de pagamento" not in texts
+
+
+def test_reader_fallback_on_403(monkeypatch):
+    from types import SimpleNamespace as NS
+    md = ("Title: Tênis de corrida | Loja\n\nMarkdown Content:\n# Tênis de corrida\n\nTexto " + "palavra " * 200 +
+          "\n\n## Como escolher o tênis de corrida\n\n- item\n- item\n\n### Pisada neutra\n\n## Institucional\n")
+
+    def fake_get(url, timeout=0, headers=None):
+        if url.startswith("https://r.jina.ai/"):
+            return NS(status_code=200, text=md)
+        return NS(status_code=403, text="blocked")
+
+    monkeypatch.setattr(crawler.requests, "get", fake_get)
+    page = crawler.fetch("https://www.netshoes.com.br/running/tenis")
+    assert page["status"] == "ok" and page.get("via") == "leitor externo"
+    texts = [h["text"] for h in page["headings"] if not h["boilerplate"]]
+    assert texts == ["Tênis de corrida", "Como escolher o tênis de corrida", "Pisada neutra"]
+
+
+def test_postprocess_faq_and_links():
+    import json
+    a = json.loads((fakes.FIX / "analysis.json").read_text())
+    a["links_internos"].append({"url": "https://www.madesa.com/inventada", "ancora": "x", "onde": "y"})
+    raw = _collect()
+    out = bp.postprocess(a, CLIENT, raw, "rack ideal para sala")
+    urls = [l["url"] for l in out["links_internos"]]
+    assert "https://www.madesa.com/inventada" not in urls and urls
+    heads = out["estrutura"]["headings"]
+    i = next(i for i, h in enumerate(heads) if "Dúvidas frequentes" in h["text"])
+    assert heads[i]["level"] == 2 and [h["text"] for h in heads[i + 1:]] == a["faq"]
+    assert all(h["level"] == 3 for h in heads[i + 1:])
+
+
+def test_manual_secondary_gets_volume_and_alert_renders():
+    import json
+    raw = _collect()
+    a = json.loads((fakes.FIX / "analysis.json").read_text())
+    a["secondary_keywords"].append("Rack Ideal Para Sala")  # variação com maiúsculas da foco (vem do overview)
+    a["alerta_serp"] = {"tipo_de_pagina_dominante": "categorias", "alerta": "Risco de não ranquear.",
+                        "keyword_alternativa": "como escolher rack"}
+    html = render.briefing_html(CLIENT, "rack ideal para sala", raw, a)
+    assert "Alerta de intenção da SERP" in html and "como escolher rack" in html
+    assert "<td>Rack Ideal Para Sala</td><td>1.900</td>" in html
+    assert "Perguntas com volume de busca (Ahrefs)" in html
+
+
+def test_prompt_carries_client_rules():
+    from ai import prompts
+    c = {**CLIENT, "tone_of_voice": "Title terminando em | Blog Decathlon", "forbidden_terms": "Mizuno"}
+    pr = prompts.analysis_prompt(c, "tenis de corrida", "", _collect())
+    assert "| Blog Decathlon" in pr and "Mizuno" in pr and "tipo_pagina_estimado" in pr
+    assert "NUNCA use links internos" in prompts.ANALYSIS_SYSTEM

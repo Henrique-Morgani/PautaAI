@@ -7,23 +7,71 @@ import json
 ANALYSIS_SYSTEM = """Você é um analista sênior de SEO de conteúdo de uma agência brasileira.
 Sua tarefa é transformar dados reais coletados (palavras-chave com volume, SERP, PAA, Visão de IA,
 headings e características das páginas concorrentes, sitemap do cliente) em uma análise estratégica
-para orientar a produção de um conteúdo de blog.
+que um redator consiga executar sem precisar perguntar nada.
 
-Regras:
+Regras gerais:
 - Baseie TODA a análise nos dados fornecidos. Não invente concorrentes, volumes, datas ou headings.
 - Quando um dado estiver ausente (ex.: página não lida), diga que não foi possível avaliar.
-- Escreva em português do Brasil, em tom profissional e direto, como um documento interno de agência.
-- Não use travessão (—). Use vírgula, dois-pontos ou ponto.
-- A estrutura de headings sugerida deve ser específica para a palavra-chave foco e superar a SERP:
-  cobrir a intenção principal, responder as PAA, aproveitar as secundárias e incluir FAQ quando fizer sentido.
-- Os H2 devem, sempre que natural, ser perguntas ou frases com termos de busca reais.
-- Title com até 60 caracteres, description entre 120 e 155 caracteres, URL curta em slug com a keyword foco.
-- Os links internos só podem usar URLs da lista de candidatas do sitemap ou dos links prioritários do cliente.
-- Devolva somente JSON válido no formato pedido."""
+- Português do Brasil, tom profissional e direto, como documento interno de agência. Não use travessão (—).
+- Siga SEMPRE o contexto e as regras do cliente (tom de voz, padrão de title, marcas que não podem ser
+  citadas, termos proibidos). Elas valem para title, description, headings, links internos e recomendações.
+
+Palavras-chave secundárias:
+- Escolha 8 a 12 termos que abram SUBTEMAS diferentes da pauta (ex.: tipos, medidas, para quem, quando trocar,
+  como escolher, comparações, perguntas). Use as candidatas com volume como base.
+- Não repita variações da mesma busca: plural/singular, com ou sem acento, "de"/"para", masculino/feminino
+  só entram juntos se cada um virar uma seção própria. Entre variações, fique com a de maior volume.
+- Inclua todas as secundárias obrigatórias do analista.
+
+Intenção e SERP:
+- Classifique o tipo de página que domina o top 10 (artigo de blog, página de categoria, página de produto,
+  marketplace, vídeo, institucional) usando o campo tipo_pagina_estimado e os headings.
+- Se a SERP for dominada por páginas que não são artigos (ex.: categorias de e-commerce), registre um alerta
+  em alerta_serp: explique o risco de um post de blog não ranquear e sugira o caminho (variação informacional
+  da keyword com volume, ou usar o conteúdo como texto de apoio da categoria).
+- Se uma variação da keyword foco tiver volume muito maior, aponte isso no alerta.
+
+Oportunidades de otimização:
+- Cada item deve ser uma instrução executável e específica, com o termo, o local e o exemplo
+  (ex.: "Usar 'X' no H1 e nos primeiros 100 caracteres da introdução", "Responder a PAA 'Y' em um bloco de 40 a 60
+  palavras logo abaixo do H2 Z", "Alt text: 'tênis de corrida para iniciantes na esteira'").
+- Inclua: uso da keyword foco (H1, introdução, H2), termos semânticos com volume, resposta às PAA,
+  links internos para categorias, alt text com exemplos, FAQ, atualização de ano quando fizer sentido.
+
+Recursos visuais: específicos da pauta, com nome e conteúdo (ex.: "Tabela: tipo de pisada x tipo de tênis
+indicado"). Não sugira recursos genéricos como "vídeos explicativos" ou "infográficos" sem dizer o conteúdo.
+
+Link building (estratégia EXTERNA, para conquistar links de outros sites):
+- Os ativos linkáveis são materiais que portais, jornalistas e blogs teriam motivo para citar e linkar:
+  checklists, guias, tabelas de referência, mini estudos com dados de busca, calculadoras, pautas para imprensa.
+- Para cada ativo, diga que tipo de site linkaria e por quê.
+- NUNCA use links internos, páginas de produto ou categorias do cliente como ativos linkáveis.
+
+Links internos (separados do link building):
+- Use só URLs da lista de candidatas do sitemap ou dos links prioritários do cliente.
+- Priorize categorias e posts do blog. Páginas de produto só se não houver categoria equivalente
+  (produto sai de linha e o link quebra).
+- Respeite as marcas que o cliente não permite citar.
+
+Estrutura:
+- Específica para a keyword foco, superando a SERP: cobre a intenção, responde às PAA, aproveita as secundárias.
+- H2 preferencialmente em forma de pergunta ou com termos de busca reais.
+- Title com até 60 caracteres, em letras minúsculas (só a primeira letra e nomes próprios em maiúscula),
+  seguindo o padrão de title do cliente quando houver. Description entre 120 e 155 caracteres.
+- URL curta em slug com a keyword foco.
+- Termine com o H2 de dúvidas frequentes e as perguntas do FAQ como H3 logo abaixo dele.
+
+Devolva somente JSON válido no formato pedido."""
 
 ANALYSIS_SCHEMA = {
     "secondary_keywords": ["10 palavras-chave secundárias escolhidas da lista de candidatas, mais relevantes para a pauta"],
     "semantic_terms": ["termos de maior volume que devem ser trabalhados semanticamente no texto"],
+    "alerta_serp": {
+        "tipo_de_pagina_dominante": "ex.: páginas de categoria de e-commerce",
+        "compativel_com_post_de_blog": True,
+        "alerta": "vazio se não houver risco; senão, explique o risco e o caminho recomendado",
+        "keyword_alternativa": "variação informacional sugerida com volume, ou vazio",
+    },
     "leitura_estrategica": "2 a 4 parágrafos: padrão da SERP, pontos fortes, pontos fracos e a oportunidade do cliente",
     "posicionamento": "uma frase entre aspas com o posicionamento recomendado para o conteúdo",
     "concorrentes": [{"concorrente": "nome do site", "caracteristica": "característica principal", "limitacao": "limitação percebida"}],
@@ -32,17 +80,17 @@ ANALYSIS_SCHEMA = {
     "leitura_semantica": "uma frase sobre o quanto a SERP resolve bem a intenção",
     "abordagem_predominante": ["itens da abordagem que os concorrentes usam"],
     "abordagem_recomendada": "parágrafo com a abordagem recomendada para o cliente, com um exemplo concreto",
-    "recursos_visuais": [{"recurso": "nome", "descricao": "como aplicar"}],
+    "recursos_visuais": [{"recurso": "nome específico do recurso", "descricao": "o conteúdo exato e onde entra no texto"}],
     "intencao": {
         "tipo": "ex.: informacional com viés inspiracional e comercial indireto",
         "descricao": "parágrafo explicando a intenção",
         "o_que_busca": ["o que a pessoa provavelmente busca"],
         "orientacao_tom": "como a conversão deve aparecer no texto",
     },
-    "oportunidades": ["oportunidades de otimização, objetivas e acionáveis"],
+    "oportunidades": ["instruções executáveis: o que fazer, com qual termo, em qual lugar, com exemplo"],
     "link_building": {
-        "resumo": "parágrafo com a estratégia de link building para a pauta",
-        "ativos": [{"titulo": "ativo linkável", "descricao": "descrição"}],
+        "resumo": "parágrafo com a estratégia EXTERNA de link building para a pauta (que tipo de sites e por quê)",
+        "ativos": [{"titulo": "ativo linkável (material citável por outros sites)", "descricao": "o que é, que tipo de site linkaria e por quê"}],
     },
     "estrutura": {
         "title": "title tag",
@@ -51,7 +99,7 @@ ANALYSIS_SCHEMA = {
         "headings": [{"level": 1, "text": "H1"}, {"level": 2, "text": "H2"}, {"level": 3, "text": "H3"}],
     },
     "links_internos": [{"url": "URL do cliente", "ancora": "texto âncora sugerido", "onde": "em qual seção usar"}],
-    "faq": ["perguntas para o bloco de dúvidas frequentes"],
+    "faq": ["5 a 7 perguntas para o bloco de dúvidas frequentes, baseadas nas PAA e nas perguntas do Ahrefs"],
 }
 
 
@@ -62,11 +110,30 @@ def _kw_table(rows, limit=60):
     return out
 
 
+def page_type(url: str, title: str = "") -> str:
+    import re
+    from urllib.parse import urlparse
+    u = urlparse(url or "")
+    path, host = u.path.lower(), u.netloc.lower()
+    if any(x in host for x in ("youtube.", "tiktok.", "instagram.", "facebook.", "pinterest.")):
+        return "rede social / vídeo"
+    if any(x in host for x in ("mercadolivre", "amazon.", "shopee", "magazineluiza", "americanas", "aliexpress")):
+        return "marketplace"
+    if re.search(r"/(blog|blogs|artigos?|dicas|central-de-dicas|noticias?|revista|guia|post)/", path) or host.startswith("blog."):
+        return "artigo"
+    if re.search(r"(/p$|/p/|/produto/|/product/|-\d{6,}/?$)", path):
+        return "produto"
+    if path in ("", "/"):
+        return "home"
+    return "categoria ou listagem"
+
+
 def _competitor_digest(pages):
     digest = []
     for p in pages:
         digest.append({
             "posicao": p.get("position"),
+            "tipo_pagina_estimado": page_type(p.get("url", "")),
             "dominio": p.get("domain"),
             "url": p.get("url"),
             "title_serp": p.get("serp_title"),
@@ -89,6 +156,8 @@ def analysis_prompt(client: dict, focus: str, topic: str, raw: dict, notes: str 
         "cliente": {
             "nome": client.get("name"), "dominio": client.get("domain"),
             "contexto_da_marca": client.get("brand_context"),
+            "tom_de_voz_e_regras": client.get("tone_of_voice"),
+            "termos_proibidos": client.get("forbidden_terms"),
             "concorrentes_diretos": client.get("competitors"),
         },
         "palavra_chave_foco": focus,
@@ -98,7 +167,8 @@ def analysis_prompt(client: dict, focus: str, topic: str, raw: dict, notes: str 
         "candidatas_a_secundarias": _kw_table(kw.get("candidates", [])),
         "serp_top10": [{k: o.get(k) for k in ("position", "title", "description", "url", "date")}
                        for o in serp.get("organic", [])],
-        "paa": serp.get("paa", []),
+        "paa": serp.get("paa", []) or raw.get("paa_manual", []),
+        "perguntas_ahrefs": [c.get("keyword") for c in kw.get("candidates", []) if c.get("source") == "perguntas"][:15],
         "buscas_relacionadas": serp.get("related_searches", []),
         "visao_de_ia": raw.get("ai_overview") or serp.get("ai_overview") or "(não exibida ou não capturada)",
         "concorrentes_lidos": _competitor_digest(raw.get("competitors", [])),

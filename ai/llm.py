@@ -27,21 +27,69 @@ def _gemini(system: str, prompt: str, want_json: bool, temperature: float) -> st
     model = (config.get("model", section="gemini") or "gemini-pro-latest").replace("models/", "")
     # v1beta é a versão da API que aceita modelos preview e os aliases "-latest"
     client = genai.Client(api_key=key, http_options=types.HttpOptions(api_version="v1beta"))
+    # 65536 é o máximo de saída dos modelos Gemini atuais; nos modelos com "thinking",
+    # o raciocínio interno também conta nesse limite, por isso o valor alto
     cfg = types.GenerateContentConfig(
-        system_instruction=system, temperature=temperature, max_output_tokens=32000,
+        system_instruction=system, temperature=temperature, max_output_tokens=65536,
         response_mime_type="application/json" if want_json else "text/plain",
     )
+
+    def call(contents):
+        nonlocal model
+        try:
+            return client.models.generate_content(model=model, contents=contents, config=cfg)
+        except Exception as ex:
+            if "404" not in str(ex) and "NOT_FOUND" not in str(ex):
+                raise
+            # modelo configurado não existe para esta chave: escolhe o melhor disponível
+            fallback = _best_gemini_model(client)
+            if not fallback:
+                raise LLMError(f"Modelo '{model}' indisponível e nenhum modelo Gemini encontrado para esta chave.") from ex
+            model = fallback
+            return client.models.generate_content(model=model, contents=contents, config=cfg)
+
+    resp = call(prompt)
+    text, finish = resp.text or "", _finish(resp)
+    # texto cortado por tamanho: pede para continuar de onde parou (até 3 vezes)
+    tries = 0
+    while finish == "MAX_TOKENS" and not want_json and tries < 3:
+        tries += 1
+        cont = (f"{prompt}\n\nVocê já escreveu o trecho abaixo, mas ele foi interrompido:\n\n{text}\n\n"
+                "Continue EXATAMENTE de onde o texto parou, sem repetir nada do que já foi escrito "
+                "e sem comentários. Termine todas as seções da estrutura.")
+        resp = call(cont)
+        more = resp.text or ""
+        text = text.rstrip() + ("" if more.startswith((" ", "\n")) else " ") + more.lstrip(" ")
+        finish = _finish(resp)
+    _set_finish(finish, model)
+    if finish in ("SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "OTHER") and not text.strip():
+        raise LLMError(f"O Gemini bloqueou a resposta (motivo: {finish}). Tente gerar de novo.")
+    return text
+
+
+def _finish(resp) -> str:
     try:
-        resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
-    except Exception as ex:
-        if "404" not in str(ex) and "NOT_FOUND" not in str(ex):
-            raise
-        # modelo configurado não existe para esta chave: escolhe o melhor disponível
-        fallback = _best_gemini_model(client)
-        if not fallback:
-            raise LLMError(f"Modelo '{model}' indisponível e nenhum modelo Gemini encontrado para esta chave.") from ex
-        resp = client.models.generate_content(model=fallback, contents=prompt, config=cfg)
-    return resp.text or ""
+        fr = resp.candidates[0].finish_reason
+        return getattr(fr, "name", str(fr or "")).replace("FinishReason.", "")
+    except Exception:
+        return ""
+
+
+# último motivo de término, para a interface avisar quando o texto vier incompleto
+LAST_FINISH = {"reason": "", "model": ""}
+
+
+def _set_finish(reason: str, model: str):
+    LAST_FINISH["reason"], LAST_FINISH["model"] = reason or "", model or ""
+
+
+FINISH_LABELS = {
+    "MAX_TOKENS": "o texto atingiu o limite de tamanho da IA mesmo após 3 continuações",
+    "SAFETY": "o Google interrompeu a resposta por filtro de segurança",
+    "RECITATION": "o Google interrompeu a resposta por semelhança com textos já publicados na web",
+    "PROHIBITED_CONTENT": "o Google interrompeu a resposta por política de conteúdo",
+    "OTHER": "o Google interrompeu a resposta sem informar o motivo",
+}
 
 
 def _best_gemini_model(client) -> str:
@@ -75,6 +123,7 @@ def _anthropic(system: str, prompt: str, want_json: bool, temperature: float) ->
     with client.messages.stream(model=model, max_tokens=32000, temperature=temperature, system=system,
                                 messages=[{"role": "user", "content": prompt}]) as stream:
         msg = stream.get_final_message()
+    _set_finish("MAX_TOKENS" if msg.stop_reason == "max_tokens" else "STOP", model)
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
 
 
@@ -86,6 +135,7 @@ OVERRIDE = None
 
 def complete(system: str, prompt: str, want_json: bool = False, temperature: float = 0.4) -> str:
     if OVERRIDE:
+        _set_finish("STOP", "teste")
         return OVERRIDE(system, prompt, want_json)
     provider = (config.LLM_PROVIDER or "gemini").lower()
     if provider not in _BACKENDS:

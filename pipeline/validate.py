@@ -72,7 +72,15 @@ def check_content(focus: str, analysis: dict, body_md: str) -> list[dict]:
     links = re.findall(r"\]\((https?://[^)]+)\)", body_md)
     dashes = body_md.count("—")
     occurrences = _norm(plain).count(_norm(focus).strip())
+    planned = [h["text"] for h in analysis.get("estrutura", {}).get("headings", []) if h.get("level") == 2]
+    written = " | ".join(re.findall(r"^#{1,4} (.+)$", body_md, re.M))
+    missing_sections = [h for h in planned if not contains_kw(written, h, 0.6)]
+    last_para = paras[-1].strip() if paras else ""
+    cut = bool(last_para) and not re.search(r"[.!?:)\]*_`]$", last_para)
     return [
+        _c("Todas as seções da estrutura no texto", not missing_sections,
+           ("faltando: " + "; ".join(missing_sections[:4])) if missing_sections else "completo"),
+        _c("Texto termina com frase completa", not cut, "o último parágrafo parece cortado" if cut else "ok"),
         _c("H1 com a keyword foco", bool(h1) and contains_kw(h1.group(1), focus), h1.group(1) if h1 else "sem H1"),
         _c("Keyword foco nas primeiras 100 palavras", contains_kw(first100, focus), "", "aviso"),
         _c("Tamanho do texto", words >= 800, f"{words} palavras", "aviso"),

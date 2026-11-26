@@ -60,11 +60,13 @@ def url_type(url: str) -> str:
     p = urlparse(url).path.lower()
     if re.search(r"/(collections?|categoria|category|c)/", p):
         return "categoria"
-    if re.search(r"/(products?|produto|p)/", p):
+    if re.search(r"/(products?|produto|p)/", p) or re.search(r"(/p/?$|-\d{6,}/?$|-\d{6,}/p)", p):
         return "produto"
     if re.search(r"/(blog|blogs|artigos?|dicas|post)/", p):
         return "blog"
-    return "pagina"
+    if re.search(r"/(pages?|institucional|ajuda|contato|politica|sobre|lojas?|account|conta|checkout|cart)(/|$)", p):
+        return "pagina"
+    return "categoria"
 
 
 def rank_candidates(urls: list[str], terms: list[str], top: int = 40) -> list[dict]:
@@ -73,7 +75,7 @@ def rank_candidates(urls: list[str], terms: list[str], top: int = 40) -> list[di
     want = set()
     for t in terms:
         want |= _tokens(t)
-    weight = {"categoria": 1.6, "blog": 1.3, "pagina": 1.0, "produto": 0.6}
+    weight = {"categoria": 1.6, "blog": 1.3, "pagina": 1.0, "produto": 0.4}
     scored = []
     for u in urls:
         path_tokens = _tokens(urlparse(u).path)
@@ -82,4 +84,11 @@ def rank_candidates(urls: list[str], terms: list[str], top: int = 40) -> list[di
             kind = url_type(u)
             scored.append({"url": u, "type": kind, "score": round(hit * weight[kind], 2)})
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:top]
+    out, products = [], 0
+    for item in scored:
+        if item["type"] == "produto":
+            if products >= 5:
+                continue
+            products += 1
+        out.append(item)
+    return out[:top]

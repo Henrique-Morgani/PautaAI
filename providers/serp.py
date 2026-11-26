@@ -17,12 +17,15 @@ class SerpError(RuntimeError):
 
 
 def search(query: str, gl: str = "br", hl: str = "pt-br", num: int = 10) -> dict:
+    """Pede 20 resultados ao Serper (o Google costuma mostrar menos de 10 orgânicos quando há
+    Shopping, vídeos e PAA) e fica com os 10 primeiros orgânicos."""
     key = config.get("api_key", section="serper") or config.get("SERPER_API_KEY")
     if not key:
         raise SerpError("Chave do Serper não configurada ([serper] api_key).")
     r = requests.post("https://google.serper.dev/search", timeout=40,
                       headers={"X-API-KEY": key, "Content-Type": "application/json"},
-                      json={"q": query, "gl": gl, "hl": hl, "num": num})
+                      json={"q": query, "gl": gl, "hl": hl,
+                            "num": int(config.get("num", section="serper") or 20)})
     if r.status_code != 200:
         raise SerpError(f"Serper retornou {r.status_code}: {r.text[:300]}")
     return normalize(r.json(), num)

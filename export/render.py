@@ -44,6 +44,12 @@ def headings_tree(headings, show_tags: bool = True) -> str:
     return "".join(out) or "<p><i>Não foi possível ler os headings desta página.</i></p>"
 
 
+def _k(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or "").lower()).encode("ascii", "ignore").decode()
+    return " ".join(s.split())
+
+
 def _fmt_num(v):
     return f"{v:,}".replace(",", ".") if isinstance(v, (int, float)) else "-"
 
@@ -51,7 +57,9 @@ def _fmt_num(v):
 def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
     kw = raw.get("keywords", {})
     serp = raw.get("serp", {})
-    cand = {c["keyword"].lower(): c for c in kw.get("candidates", [])}
+    cand = {_k(c["keyword"]): c for c in kw.get("candidates", [])}
+    for c in kw.get("focus", []) or []:  # métricas das secundárias digitadas pelo analista
+        cand.setdefault(_k(c.get("keyword", "")), c)
     fm = (kw.get("focus") or [{}])[0] if kw.get("focus") else {}
     p = [f"<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>",
          "<h1>Análise para produção de conteúdo</h1>", "<h2>Análise do cenário</h2>",
@@ -63,7 +71,7 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
     p.append("<h3>Palavras-chave secundárias</h3>")
     rows = []
     for k in a.get("secondary_keywords", []):
-        c = cand.get(k.lower(), {})
+        c = cand.get(_k(k), {})
         rows.append([e(k), _fmt_num(c.get("volume")), _fmt_num(c.get("difficulty"))])
     p.append(_table(["Palavra-chave", "Volume", "KD"], rows) if rows else _ul([]))
     if a.get("semantic_terms"):
@@ -72,7 +80,18 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
     p.append("<h2>Análise da SERP</h2><h3>Visão de IA da SERP</h3>")
     aio = raw.get("ai_overview") or ""
     p.append("".join(f"<p>{e(x)}</p>" for x in aio.split("\n") if x.strip()) or "<p><i>A SERP não exibiu Visão de IA no momento da coleta.</i></p>")
-    p.append("<h3>PAA</h3>" + _ul(serp.get("paa")))
+    p.append("<h3>PAA</h3>")
+    if serp.get("paa"):
+        if raw.get("paa_source") == "manual":
+            p.append("<p><i>PAA informado manualmente pelo analista.</i></p>")
+        p.append(_ul(serp.get("paa")))
+    else:
+        p.append("<p><i>A SERP não exibiu PAA no momento da coleta.</i></p>")
+    questions = [c["keyword"] for c in kw.get("candidates", []) if c.get("source") == "perguntas"][:10]
+    if questions:
+        p.append("<h4>Perguntas com volume de busca (Ahrefs)</h4>")
+        p.append(_table(["Pergunta", "Volume"], [[e(c["keyword"]), _fmt_num(c.get("volume"))]
+                                                 for c in kw.get("candidates", []) if c.get("source") == "perguntas"][:10]))
     if serp.get("related_searches"):
         p.append("<h3>Buscas relacionadas</h3>" + _ul(serp.get("related_searches")))
 
@@ -92,6 +111,8 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
                 facts.append(f"{c[key]} {label}")
         if c.get("has_faq_schema"):
             facts.append("FAQ schema")
+        if c.get("via"):
+            facts.append("lido via leitor externo")
         if c.get("published") or c.get("modified"):
             facts.append(f"publicado {c.get('published') or '-'} / atualizado {c.get('modified') or '-'}")
         if facts:
@@ -101,6 +122,13 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
         else:
             p.append(headings_tree([h for h in c.get("headings", []) if not h.get("boilerplate")]))
 
+    al = a.get("alerta_serp") or {}
+    if al.get("alerta"):
+        p.append("<h3>Alerta de intenção da SERP</h3>")
+        p.append(f"<p><b>Tipo de página dominante:</b> {e(al.get('tipo_de_pagina_dominante'))}</p>")
+        p.append(f"<p>{e(al.get('alerta'))}</p>")
+        if al.get("keyword_alternativa"):
+            p.append(f"<p><b>Alternativa sugerida:</b> {e(al.get('keyword_alternativa'))}</p>")
     p.append("<h3>Leitura estratégica do cenário</h3>")
     p += [f"<p>{e(x)}</p>" for x in str(a.get("leitura_estrategica", "")).split("\n") if x.strip()]
     if a.get("posicionamento"):
@@ -113,7 +141,9 @@ def briefing_html(client: dict, focus: str, raw: dict, a: dict) -> str:
     if a.get("concorrente_destaque"):
         p.append(f"<p>{e(a['concorrente_destaque'])}</p>")
     if a.get("formatos"):
-        p.append(f"<p>Os conteúdos que aparecem na SERP seguem basicamente <b>{len(a['formatos'])} formatos principais</b>:</p><ul>")
+        n = len(a["formatos"])
+        label = "1 formato principal" if n == 1 else f"{n} formatos principais"
+        p.append(f"<p>Os conteúdos que aparecem na SERP seguem basicamente <b>{label}</b>:</p><ul>")
         for f in a["formatos"]:
             p.append(f"<li>{e(f.get('nome'))}<ul><li>Estrutura:{_ul(f.get('estrutura'))}</li>"
                      f"<li>Características:{_ul(f.get('caracteristicas'))}</li></ul></li>")

@@ -11,6 +11,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from ai import llm
 from core import auth, config, db
 from export import gdocs, render
 from pipeline import briefing as bp
@@ -104,8 +105,9 @@ def page_new():
         manual = c3.text_area("Secundárias obrigatórias (opcional, uma por linha)", height=120)
         notes = c4.text_area("Observações para a análise (opcional)", height=120,
                              placeholder="ex.: data sazonal, produtos para destacar, abordagem pedida pelo cliente")
-        with st.expander("Colar a Visão de IA manualmente (use se ela não vier na coleta)"):
-            aio = st.text_area("Texto da Visão de IA", height=160, label_visibility="collapsed")
+        with st.expander("Opcional: colar Visão de IA e PAA manualmente (use se não vierem na coleta)"):
+            aio = st.text_area("Texto da Visão de IA", height=140)
+            paa_txt = st.text_area("Perguntas do PAA (uma por linha)", height=100)
         submitted = st.form_submit_button("Gerar análise", type="primary", width="stretch")
 
     if not submitted:
@@ -123,7 +125,7 @@ def page_new():
             st.write(msg)
             bar.progress(pct)
 
-        raw = bp.collect(cd, focus.strip(), lines(manual), aio, progress=progress)
+        raw = bp.collect(cd, focus.strip(), lines(manual), aio, progress=progress, paa_manual=lines(paa_txt))
         for err in raw.get("errors", []):
             st.warning(err)
         progress("Analisando com IA", 0.85)
@@ -192,6 +194,10 @@ def page_briefing():
 
     for err in raw.get("errors", []):
         st.warning(err)
+    al = (a.get("alerta_serp") or {}) if a else {}
+    if al.get("alerta"):
+        st.error(f"**Alerta de intenção:** {al['alerta']}"
+                 + (f"  \n**Alternativa sugerida:** {al['keyword_alternativa']}" if al.get("keyword_alternativa") else ""))
 
     tabs = st.tabs(["1. Dados coletados", "2. Análise", "3. Estrutura", "4. Exportar briefing", "5. Texto"])
 
@@ -209,7 +215,7 @@ def page_briefing():
                          hide_index=True, width="stretch")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**PAA**")
+            st.markdown(f"**PAA** ({raw.get('paa_source') or 'não exibido'})")
             for q in serp.get("paa", []) or ["(nenhuma)"]:
                 st.markdown(f"- {q}")
         with c2:
@@ -236,6 +242,7 @@ def page_briefing():
         with st.form("analise"):
             sec = st.text_area("Palavras-chave secundárias (uma por linha)", "\n".join(a.get("secondary_keywords", [])), height=200)
             sem = st.text_area("Termos semânticos (um por linha)", "\n".join(a.get("semantic_terms", [])), height=110)
+            al_txt = st.text_area("Alerta de intenção da SERP (deixe vazio se não houver)", al.get("alerta", ""), height=90)
             leit = st.text_area("Leitura estratégica do cenário", a.get("leitura_estrategica", ""), height=200)
             pos = st.text_input("Posicionamento", a.get("posicionamento", ""))
             st.markdown("**Concorrentes: característica e limitação**")
@@ -263,6 +270,7 @@ def page_briefing():
             save = st.form_submit_button("Salvar revisão", type="primary")
         if save:
             a.update({
+                "alerta_serp": {**al, "alerta": al_txt.strip()},
                 "secondary_keywords": lines(sec), "semantic_terms": lines(sem), "leitura_estrategica": leit,
                 "posicionamento": pos, "concorrentes": comp_df.fillna("").to_dict("records"),
                 "concorrente_destaque": dest, "abordagem_predominante": lines(abp), "abordagem_recomendada": abr,
@@ -341,6 +349,8 @@ def page_content(b, cd, a):
         with st.spinner("Escrevendo o texto..."):
             try:
                 st.session_state[key] = cp.generate(cd, b.focus_keyword, a, extra, size)
+                reason = llm.LAST_FINISH.get("reason", "")
+                st.session_state[f"finish_{b.id}"] = llm.FINISH_LABELS.get(reason, "")
                 db.save_content({"briefing_id": b.id, "user_id": auth.current_user()["id"],
                                  "body_markdown": st.session_state[key]})
                 db.save_briefing({"status": "texto_gerado"}, b.id)
@@ -351,6 +361,10 @@ def page_content(b, cd, a):
     body = st.session_state[key]
     if not body:
         return
+    if st.session_state.get(f"finish_{b.id}"):
+        st.warning(f"O texto pode estar incompleto: {st.session_state[f'finish_{b.id}']}. "
+                   "Confira as checagens ao lado e, se faltar alguma seção, use \"Reescrever uma seção\" "
+                   "ou gere de novo.")
     left, right = st.columns([3, 2])
     with left:
         edited = st.text_area("Texto (markdown, editável)", body, height=600)

@@ -5,6 +5,7 @@ poder mostrar o progresso por etapa e para permitir regenerar só a análise sem
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from ai import llm, prompts
@@ -16,11 +17,12 @@ COUNTRY_TO_HL = {"br": "pt-br", "pt": "pt-pt", "mx": "es-419", "ar": "es-419", "
 
 def collect(client: dict, focus: str, manual_secondary: list[str] | None = None,
             ai_overview_manual: str = "", progress: Callable[[str, float], None] | None = None,
+            paa_manual: list[str] | None = None,
             kw_provider: keywords.KeywordProvider | None = None,
             serp_fn=serp.search, crawl_fn=crawler.fetch_many, sitemap_fn=sitemap.fetch_urls) -> dict:
     progress = progress or (lambda *_: None)
     country = (client.get("country") or "br").lower()
-    raw: dict = {"manual_secondary": manual_secondary or [], "errors": []}
+    raw: dict = {"manual_secondary": manual_secondary or [], "paa_manual": paa_manual or [], "errors": []}
 
     progress("Buscando palavras-chave", 0.1)
     try:
@@ -39,6 +41,11 @@ def collect(client: dict, focus: str, manual_secondary: list[str] | None = None,
         raw["errors"].append(f"SERP: {e}")
     raw["ai_overview"] = ai_overview_manual.strip() or raw["serp"].get("ai_overview", "")
     raw["ai_overview_source"] = "manual" if ai_overview_manual.strip() else ("serp" if raw["ai_overview"] else "")
+    if not raw["serp"].get("paa") and paa_manual:
+        raw["serp"]["paa"] = paa_manual
+        raw["paa_source"] = "manual"
+    elif raw["serp"].get("paa"):
+        raw["paa_source"] = "serp"
 
     progress("Lendo as páginas concorrentes", 0.5)
     organic = raw["serp"].get("organic", [])
@@ -72,4 +79,35 @@ def analyze(client: dict, focus: str, topic: str, raw: dict, notes: str = "") ->
         if k and k.lower() not in [s.lower() for s in sec]:
             sec.append(k)
     analysis["secondary_keywords"] = sec
+    return postprocess(analysis, client, raw, focus)
+
+
+_FAQ_RE = re.compile(r"d[uú]vidas|perguntas frequentes|\bfaq\b", re.I)
+
+
+def postprocess(analysis: dict, client: dict, raw: dict, focus: str) -> dict:
+    """Correções determinísticas sobre a saída da IA."""
+    # 1. links internos: só URLs que existem no sitemap/links prioritários
+    allowed = {c["url"].rstrip("/") for c in raw.get("internal_candidates", [])}
+    allowed |= {l.strip().rstrip("/") for l in (client.get("priority_links") or "").splitlines() if l.strip()}
+    if allowed:
+        analysis["links_internos"] = [l for l in analysis.get("links_internos", [])
+                                      if str(l.get("url", "")).rstrip("/") in allowed]
+
+    # 2. FAQ: perguntas como H3 logo abaixo do H2 de dúvidas frequentes
+    est = analysis.setdefault("estrutura", {})
+    heads = [h for h in est.get("headings", []) if h.get("text")]
+    faq = [q for q in analysis.get("faq", []) if q]
+    if faq:
+        idx = next((i for i, h in enumerate(heads) if h.get("level") == 2 and _FAQ_RE.search(h["text"])), None)
+        if idx is None:
+            heads.append({"level": 2, "text": f"Dúvidas frequentes sobre {focus.strip().lower()}"})
+            idx = len(heads) - 1
+        end = idx + 1
+        while end < len(heads) and heads[end].get("level", 2) > 2:
+            end += 1
+        existing = [h for h in heads[idx + 1:end] if h.get("level") == 3]
+        if not existing:
+            heads[idx + 1:end] = [{"level": 3, "text": q.strip()} for q in faq]
+    est["headings"] = heads
     return analysis
